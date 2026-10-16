@@ -1,0 +1,1950 @@
+<!doctype html>
+<html lang="hi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+/* ====================== YAHAN APNI FIREBASE DETAILS PASTE KARO ======================
+   Firebase console > Project settings > Your apps > Web app > "firebaseConfig"           */
+window.FIREBASE_CONFIG = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PASTE_PROJECT.firebaseapp.com",
+  databaseURL: "https://PASTE_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "PASTE_PROJECT",
+  appId: "PASTE_APP_ID"
+};
+/* ==================================================================================== */
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+#fbGate{position:fixed;inset:0;z-index:100;background:#f7f9fd;display:flex;align-items:center;justify-content:center;padding:16px}
+#fbGate[hidden]{display:none}
+.fbBox{background:#fff;border:1px solid #e2e8f3;border-radius:14px;padding:22px;width:100%;max-width:360px;font:15px system-ui;color:#1f2a44;box-shadow:0 6px 24px rgba(31,42,68,.08)}
+.fbBox h2{margin:0 0 14px;font-size:19px} .fbLogo{font:800 13px system-ui;letter-spacing:.08em;color:#c94a4f;margin-bottom:4px}
+.fbBox label{display:block;font-weight:600;font-size:13px;margin:10px 0} .fbBox input{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:10px;border:1px solid #cfd8e8;border-radius:8px;font-size:16px}
+.fbBox button{width:100%;margin-top:8px;padding:11px;border:0;border-radius:8px;background:#2f5bb8;color:#fff;font:600 16px system-ui;cursor:pointer}
+.fbMsg{min-height:1.2em;color:#c94a4f;font-size:13px} .fbBox a{font-size:13px;color:#2f5bb8}
+#fbOut{position:fixed;right:10px;bottom:10px;z-index:60;padding:6px 10px;border:1px solid #cfd8e8;border-radius:8px;background:#fff;color:#1f2a44;font:500 12px system-ui;opacity:.85}
+#fbNet{position:sticky;top:0;z-index:70;background:#c62828;color:#fff;padding:8px 12px;font:600 14px system-ui}
+@media print{#fbOut,#fbNet,#fbGate{display:none!important}}
+</style>
+</head><body>
+<div id="fbNet" hidden>Internet nahi hai — entries phone mein ruki hain, internet aate hi apne aap save ho jayengi.</div>
+<script>
+/* ===== Firebase Realtime Database bridge: page ka "claude.use(...)" Firebase se chalta hai ===== */
+(function(){
+  const ROOT="bb";
+  let resolveReady;const readyP=new Promise(r=>resolveReady=r);
+  const API={};
+  window.claude={use:async n=>{await readyP;return API[n]||null;}};
+  const clone=x=>x==null?x:JSON.parse(JSON.stringify(x));
+  const $id=i=>document.getElementById(i);
+  function gate(html){let g=$id("fbGate");if(!g){g=document.createElement("div");g.id="fbGate";document.body.append(g);}g.innerHTML=html;g.hidden=false;return g;}
+  const cfg=window.FIREBASE_CONFIG||{};
+  if(!window.firebase||!cfg.apiKey||/PASTE/i.test(cfg.apiKey)){
+    document.addEventListener("DOMContentLoaded",()=>gate('<div class="fbBox"><h2>Setup baaki hai</h2><p>Is file ke sabse upar <b>FIREBASE_CONFIG</b> mein apne Firebase project ki details paste karo (SETUP guide dekho).</p></div>'));
+    return;}
+  firebase.initializeApp(cfg);
+  const auth=firebase.auth(),rtdb=firebase.database();
+  if(window.__FB_EMU){auth.useEmulator("http://127.0.0.1:9099");rtdb.useEmulator("127.0.0.1",9000);}
+  let started=false;
+  function showLogin(msg){
+    const g=gate(`<form class="fbBox" id="fbForm" autocomplete="on"><div class="fbLogo">BIHANI BROTHERS</div><h2>Day Book – Login</h2>
+      <label>Email<input id="fbEmail" type="email" autocomplete="username" required></label>
+      <label>Password<input id="fbPass" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Login</button><p id="fbMsg" class="fbMsg">${msg||""}</p>
+      <a href="#" id="fbForgot">Password bhool gaye?</a></form>`);
+    g.querySelector("#fbForm").onsubmit=async e=>{e.preventDefault();const m=$id("fbMsg");m.textContent="Login ho raha hai…";
+      try{await auth.signInWithEmailAndPassword($id("fbEmail").value.trim(),$id("fbPass").value);}
+      catch(x){m.textContent=/wrong-password|invalid-credential|user-not-found|invalid-login/.test(x.code||"")?"Email ya password galat hai.":/too-many/.test(x.code||"")?"Bahut baar galat — thodi der baad try karo.":/network/.test(x.code||"")?"Internet nahi hai.":"Login nahi hua: "+(x.code||x.message);}};
+    g.querySelector("#fbForgot").onclick=async e=>{e.preventDefault();const em=$id("fbEmail").value.trim(),m=$id("fbMsg");
+      if(!em){m.textContent="Pehle upar email likho.";return;}
+      try{await auth.sendPasswordResetEmail(em);m.textContent="Password badalne ka link email par bhej diya.";}catch(x){m.textContent="Link nahi gaya: "+(x.code||x.message);}};}
+  auth.onAuthStateChanged(async u=>{
+    if(!u){if(started){location.reload();return;}showLogin();return;}
+    const g=$id("fbGate");if(g)g.hidden=true;
+    let lo=$id("fbOut");if(!lo){lo=document.createElement("button");lo.id="fbOut";lo.type="button";document.body.append(lo);lo.onclick=()=>auth.signOut();}
+    lo.textContent="Logout ("+(u.email||"")+")";
+    if(started)return;started=true;
+    try{await seedIfEmpty(u);}catch(e){console.warn("seed",e);
+      if(/permission/i.test(String(e&&e.code||e&&e.message))){gate('<div class="fbBox"><h2>Ijazat nahi</h2><p>Is email ('+(u.email||"")+') ko Day Book dekhne ki ijazat nahi hai. Owner se Firebase Rules mein email judwao.</p><button type="button" onclick="firebase.auth().signOut()">Logout</button></div>');return;}}
+    build(u);resolveReady();});
+  // net status
+  rtdb.ref(".info/connected").on("value",s=>{const b=$id("fbNet");if(b)b.hidden=!!s.val()||!started;});
+  const enc=(o,u)=>({j:JSON.stringify(o),at:firebase.database.ServerValue.TIMESTAMP,by:(u&&u.email)||""});
+  const dec=v=>{if(!v||typeof v.j!=="string")return null;try{return JSON.parse(v.j);}catch(e){return null;}};
+  async function seedIfEmpty(u){await rtdb.ref(ROOT+"/settings").get();} // ijazat check
+  function build(u){
+    const errOf=e=>({code:/permission/i.test(String(e&&e.code||e&&e.message))?"permission_denied":"unavailable",message:String(e&&e.message||e)});
+    function docRef(path){const ref=rtdb.ref(ROOT+"/"+path);return{
+      set:data=>ref.set(enc(clone(data),u)).catch(e=>{throw errOf(e);}),
+      update:async data=>{const s=await ref.get();const o=Object.assign(dec(s.val())||{},clone(data));return ref.set(enc(o,u)).catch(e=>{throw errOf(e);});},
+      delete:()=>ref.remove().catch(e=>{throw errOf(e);}),
+      get:async()=>{const s=await ref.get();const d=dec(s.val());return{exists:d!=null,data:()=>clone(d)};},
+      onSnapshot:(fn,err)=>{ref.on("value",s=>{const d=dec(s.val());fn({exists:d!=null,data:()=>clone(d)});},e=>err&&err(errOf(e)));return()=>ref.off();}};}
+    function colRef(name){const ref=rtdb.ref(ROOT+"/"+name);const q={limit:()=>q,orderBy:()=>q,where:()=>q,doc:id=>docRef(name+"/"+id),
+      onSnapshot:(fn,err)=>{const known=new Map();const one=(type,key,j)=>{let d=null;try{d=j?JSON.parse(j):null;}catch(e){}fn({docChanges:()=>[{type,doc:{id:key,data:()=>clone(d)}}]});};
+        ref.once("value").then(s=>{const ch=[];s.forEach(c=>{const v=c.val();const d=dec(v);if(d){known.set(c.key,v.j);ch.push({type:"added",doc:{id:c.key,data:()=>clone(d)}});}});fn({docChanges:()=>ch});
+          ref.on("child_added",c=>{const v=c.val();if(!v||typeof v.j!=="string"||known.get(c.key)===v.j)return;const t=known.has(c.key)?"modified":"added";known.set(c.key,v.j);one(t,c.key,v.j);});
+          ref.on("child_changed",c=>{const v=c.val();if(!v||typeof v.j!=="string"||known.get(c.key)===v.j)return;known.set(c.key,v.j);one("modified",c.key,v.j);});
+          ref.on("child_removed",c=>{if(!known.has(c.key))return;known.delete(c.key);one("removed",c.key,null);});
+        }).catch(e=>err&&err(errOf(e)));return()=>ref.off();}};return q;}
+    API.db={doc:p=>docRef(p),collection:c=>colRef(c)};
+    const me=u.email||u.uid;
+    API.user={id:async()=>me,can:async()=>true,isOwner:()=>true,canEdit:()=>true,
+      profiles:async ids=>{const o={};for(const id of ids)o[id]={name:String(id||"").split("@")[0],isMe:id===me,avatarUrl:"data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="};return o;}};
+
+    // ---- attachments: RTDB mein chunks (Firebase Storage ke bina, free plan) ----
+    const CH=900000,cache=new Map();
+    const b64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob);});
+    async function fileUrl(id){if(cache.has(id))return cache.get(id);
+      const p=(async()=>{const s=await rtdb.ref(ROOT+"_files/"+id).get();const v=s.val();if(!v)throw new Error("nahi mili");
+        const parts=Object.keys(v.c||{}).sort((a,b)=>a-b).map(k=>v.c[k]);const bin=atob(parts.join(""));const u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([u8],{type:v.type||"application/octet-stream"}));})();
+      cache.set(id,p);p.catch(()=>cache.delete(id));return p;}
+    API.assets={
+      upload:async(blob,opt)=>{const type=(opt&&opt.type)||blob.type||"application/octet-stream";if(blob.size>10*1048576)throw{code:"too_large"};
+        if(!/^(image\/(png|jpeg|gif|webp)|application\/pdf)$/.test(type))throw{code:"unsupported_type"};
+        const s=await b64(blob),c={};for(let i=0,n=0;i<s.length;i+=CH,n++)c[n]=s.slice(i,i+CH);
+        const ref=rtdb.ref(ROOT+"_files").push();await ref.set({type,size:blob.size,by:u.email||"",at:firebase.database.ServerValue.TIMESTAMP,c}).catch(e=>{throw errOf(e);});
+        return{id:ref.key,url:"#fbfile:"+ref.key,sizeBytes:blob.size,contentType:type};},
+      delete:async id=>{await rtdb.ref(ROOT+"_files/"+id).remove();return{deleted:true};},
+      list:async()=>({assets:[],usage:{}})};
+    window.__blobLink=id=>"#fbfile:"+id;
+    window.__blobImg=id=>"data:image/gif;fbid="+id+";base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+    document.addEventListener("click",async e=>{const a=e.target.closest&&e.target.closest('a[href^="#fbfile:"]');if(!a)return;e.preventDefault();
+      const w=window.open("","_blank");try{const url=await fileUrl(a.getAttribute("href").slice(8));if(w)w.location=url;else location.href=url;}catch(x){if(w)w.close();alert("File nahi khuli: "+(x.message||x));}},true);
+    const fix=img=>{const m=/fbid=([^;]+);/.exec(img.getAttribute("src")||"");if(!m||img.dataset.fbl)return;img.dataset.fbl="1";fileUrl(m[1]).then(u=>img.src=u).catch(()=>{});};
+    new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.nodeType===1){if(n.tagName==="IMG")fix(n);n.querySelectorAll&&n.querySelectorAll('img[src*="fbid="]').forEach(fix);}}).observe(document.body,{childList:true,subtree:true});
+  }
+})();
+</script>
+<title>Bihani Brothers Day Book</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-column ledger on phones, two-column ledger (receipts | payments) on wide screens; sticky date bar */
+/* Oil-company dealer palette: deep blue + red */
+:root{
+  --bg:#f7f9fd; --paper:#ffffff; --ink:#1f2a44; --muted:#6a7590; --line:#e2e8f3;
+  --accent:#2f5bb8; --accent-soft:#eef3fc; --hsd:#2f5bb8; --hsd-soft:#eef3fc; --ms:#c94a4f; --ms-soft:#fcefef;
+  --warn:#c94a4f; --good:#2f8a57; --field:#f8fafd;
+  --cash:#b26a00; --cash-soft:#fff6e6; --band:#eaf0fb; --band-2:#f4f7fd; --on-band:#1e3f8a; --red:#e8797d;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1222; --paper:#141c30; --ink:#e4e9f5; --muted:#97a3bd; --line:#27324b;
+  --accent:#7ea2ff; --accent-soft:#1a2747; --hsd:#7ea2ff; --hsd-soft:#1a2747; --ms:#ff6f74; --ms-soft:#3a1a1f;
+  --warn:#ff6f74; --good:#5fd08f; --field:#10172a;
+  --cash:#f0b45a; --cash-soft:#2b2214; --band:#18233d; --band-2:#141c30; --on-band:#b9cbff; --red:#c4565b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1222; --paper:#141c30; --ink:#e4e9f5; --muted:#97a3bd; --line:#27324b;
+  --accent:#7ea2ff; --accent-soft:#1a2747; --hsd:#7ea2ff; --hsd-soft:#1a2747; --ms:#ff6f74; --ms-soft:#3a1a1f;
+  --warn:#ff6f74; --good:#5fd08f; --field:#10172a;
+  --cash:#f0b45a; --cash-soft:#2b2214; --band:#18233d; --band-2:#141c30; --on-band:#b9cbff; --red:#c4565b; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 16px;margin-top:12px;padding:16px 18px 14px;
+  background:linear-gradient(135deg,var(--band),var(--band-2));color:var(--on-band);border-radius:14px;border:1px solid var(--line);border-bottom:3px solid var(--red)}
+.brand h1{font-family:var(--f-display);font-weight:800;font-size:1.7rem;letter-spacing:.03em;margin:0;line-height:1.1;color:var(--on-band)}
+.brand p{margin:3px 0 0;color:var(--on-band);opacity:.85;font-size:.85rem}
+.tabs{display:flex;gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:3px}
+.tabs button{border:0;background:none;color:var(--muted);font:600 .9rem var(--f-body);padding:7px 14px;border-radius:7px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+.bar .nav{display:flex;gap:6px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:500 .9rem var(--f-body);padding:7px 12px;border-radius:8px;cursor:pointer;min-height:38px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.btn.small{padding:4px 10px;min-height:32px;font-size:.85rem}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn.danger{color:var(--warn)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+input[type=date],input[type=month]{font:500 .95rem var(--f-body);padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);min-height:38px}
+.bar .tabs{margin-left:auto}
+.bar .status{flex-basis:100%;order:9}
+@media (max-width:560px){.tabs .long{display:none}#todayBtn{display:none}.bar .nav{gap:4px}.bar .nav .btn{padding:6px 8px;min-width:0}input[type=date],input[type=month]{padding:6px 4px;font-size:.88rem}.bar .tabs{padding:2px}.tabs button{padding:7px 9px;font-size:.85rem}.bar{gap:6px}}
+.status{font-size:.82rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--good)} .dot.busy{background:var(--hsd)} .dot.err{background:var(--warn)}
+.banner{margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--hsd-soft);color:var(--ink);font-size:.9rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.daytitle{font-family:var(--f-display);font-weight:700;font-size:1.25rem;margin:16px 0 8px}
+.dayhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:14px 0 12px}
+.dayhead .daytitle{margin:0}
+.titlerow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+#expBtn{border-color:var(--accent);color:var(--accent);font-weight:600}
+.expwrap{position:relative}
+.tankchip{display:flex;align-items:center;gap:6px;background:var(--paper);border:1.5px solid var(--accent);border-radius:8px;padding:2px 8px 2px 6px;min-height:32px;cursor:pointer;color:var(--accent);font:inherit;box-shadow:0 2px 8px rgba(30,63,138,.12)}
+.tankchip:hover{box-shadow:0 3px 14px rgba(30,63,138,.25)}
+.tk-ico{display:block;width:38px;height:22px;color:var(--accent)}
+.tk-ico svg,.tk-head svg{width:100%;height:100%;display:block}
+.tk-no{font-family:var(--f-num);font-weight:600;font-size:.82rem;letter-spacing:.06em;color:var(--accent)}
+.tk-go{font-size:.78rem;font-weight:600;color:var(--accent)}
+.tk-head{display:flex;align-items:center;gap:12px;margin:14px 0 12px;color:var(--accent)}
+.tk-head svg{width:84px;height:48px}
+.tk-sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.tk-kpi .v{font-size:1.4rem;font-weight:600}
+.tk-kpi.hsd{border:2px solid var(--hsd);background:var(--hsd-soft)}.tk-kpi.hsd .l,.tk-kpi.hsd .v{color:var(--hsd)}
+.tk-kpi.ms{border:2px solid var(--ms);background:var(--ms-soft)}.tk-kpi.ms .l,.tk-kpi.ms .v{color:var(--ms)}
+.bk-form.tk-form{grid-template-columns:190px 150px 90px 130px 120px minmax(0,1fr) auto}
+@media (max-width:860px){.bk-form.tk-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tk-t{min-width:600px}
+.month tr.cur td{background:var(--accent-soft);font-weight:600}
+@media (max-width:640px){.tk-sum{grid-template-columns:repeat(2,minmax(0,1fr))}.tk-sum .all{grid-column:1/-1}.tk-kpi .v{font-size:1.1rem}.tankchip{padding:2px 6px 2px 4px;gap:4px}.tk-ico{width:30px;height:18px}.tk-no{font-size:.74rem;padding:0 4px}}
+.so-dates{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:end}
+.so-dates label{display:grid;gap:3px;font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.so-dates input{font:500 .95rem var(--f-body);padding:7px 10px;border:1.5px solid var(--accent);border-radius:8px;background:var(--paper);color:var(--ink)}
+.so-dates .titlebtns{margin-left:auto}
+.so-close{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.titlebtns{display:flex;gap:8px;align-items:center;margin-left:auto}
+#prtBtn{border-color:var(--accent);color:var(--accent);font-weight:600}
+.expmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px rgba(20,32,64,.15);padding:4px;min-width:170px}
+.expmenu button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:var(--ink);font:500 .9rem var(--f-body);padding:8px 10px;border-radius:7px;cursor:pointer;text-align:left}
+.expmenu button:hover{background:var(--accent-soft)}
+#riBtn{border-color:var(--accent);color:var(--accent);font-weight:600}
+.ri-ov{position:fixed;inset:0;background:rgba(20,32,64,.45);z-index:60;overflow:auto;padding:16px}
+.ri-box{max-width:1150px;margin:0 auto;background:var(--paper);color:var(--ink);border-radius:14px;padding:16px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.ri-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.ri-pick,.ri-map{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 12px}
+.ri-pick label,.ri-map label,.ri-mode{display:flex;flex-direction:column;gap:4px;font:600 .78rem var(--f-body);color:var(--muted)}
+.ri-pick select,.ri-pick input,.ri-map select,.ri-mode select{font:500 .95rem var(--f-body);padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);min-height:38px;max-width:260px}
+.ri-src{display:flex;gap:12px;flex-wrap:wrap}
+.ri-big{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:14px 18px;min-width:180px;border-color:var(--accent)}
+.ri-big b{font-size:1.05rem;color:var(--accent)} .ri-big span{font-size:.8rem;color:var(--muted)}
+.ri-t{border-collapse:collapse;width:100%;font-size:.88rem}
+.ri-t th,.ri-t td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.ri-t th.num{text-align:right} .ri-t td.out{text-align:right;font-family:var(--f-mono,monospace)}
+.ri-t input.f{width:100px;text-align:right}
+.ri-t tr.ri-off td{color:var(--muted)}
+.ri-t select{font:500 .85rem var(--f-body);padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
+.ri-t tr.ri-bad{background:rgba(201,74,79,.07)}
+.ri-t td.warn{font-size:.8rem;min-width:160px}
+.ri-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.so-att{margin-top:14px}
+.att-grid{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 10px}
+.att-wrap{position:relative;width:120px}
+.att-item{display:flex;flex-direction:column;gap:4px;text-decoration:none;color:var(--ink)}
+.att-item img,.att-pdf{width:120px;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--accent-soft)}
+.att-pdf{display:grid;place-items:center;font:700 1.1rem var(--f-body);color:#c62828;background:#fdecec}
+.att-name{font-size:.75rem;color:var(--muted,#6b7690);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-del{position:absolute;top:4px;right:4px;min-width:26px;height:26px;border-radius:13px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer;font-size:.9rem;padding:0 6px}
+.att-del.armed{background:#c62828;color:#fff;border-color:#c62828;font-size:.75rem}
+.att-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.expmenu .prepopt{border-top:1px solid var(--line);margin-top:4px;padding:6px 10px 4px}
+.expmenu .prephd{font:600 .72rem var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#6b7690);margin-bottom:2px}
+.expmenu .prepopt label{display:flex;align-items:center;gap:8px;padding:5px 0;font:500 .9rem var(--f-body);color:var(--ink);cursor:pointer}
+.expmenu .prepopt input{width:16px;height:16px;accent-color:var(--accent)}
+.expmenu .xl.pdf{background:#c62828}
+.expmenu .xl{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:4px;background:#1d6f42;color:#fff;font-size:.72rem;font-weight:700}
+.ratebox{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;background:var(--accent-soft);border:2px solid var(--accent);border-radius:12px;padding:10px;width:min(100%,520px);box-shadow:0 2px 10px rgba(30,63,138,.12)}
+.fuel{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px 10px;display:grid;gap:6px;min-width:0}
+.fuel.hsd{border-top:3px solid var(--hsd)} .fuel.ms{border-top:3px solid var(--ms)}
+.fuel .fh{font-family:var(--f-display);font-weight:800;font-size:1.15rem;letter-spacing:.04em}
+.fuel.hsd .fh{color:var(--hsd)} .fuel.ms .fh{color:var(--ms)}
+.fuel .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fuel .row .l{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap}
+.fuel .row .v{font-family:var(--f-num);font-size:1.05rem;font-weight:500;white-space:nowrap}
+.ratebox input.f{width:100px;font-size:1.1rem;font-weight:600;border:1.5px solid var(--accent);background:var(--paper);padding:6px 8px}
+.ratebox input.f:focus{border-color:var(--accent)}
+.ratehint{margin:0;grid-column:1/-1}
+.toprow{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+.toprow .ratebox{flex:0 1 520px}
+.toprow .kpi.hero{flex:1 1 200px;align-self:stretch;align-items:center;text-align:center;display:flex;flex-direction:column;justify-content:center;padding:12px 16px;background:var(--cash-soft);border:2px solid var(--cash);box-shadow:0 2px 10px rgba(178,106,0,.15);border-radius:12px}
+.toprow .kpi.hero .v{font-size:1.6rem;font-weight:600;color:var(--cash)}
+.toprow .kpi.hero .l{color:var(--cash);font-weight:700}
+.toprow .kpi.hero .ob{display:grid;gap:1px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px dashed var(--cash);width:100%}
+.toprow .kpi.hero .obl{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--cash);font-weight:700}
+.toprow .kpi.hero .obv{font-family:var(--f-num);font-size:1.6rem;font-weight:600;color:var(--cash);margin-top:2px}
+@media (max-width:560px){.toprow .kpi.hero .obl{font-size:.62rem}.toprow .kpi.hero .obv{font-size:.86rem}}
+.bankbal{flex:0 1 300px;background:var(--paper);border:2px solid var(--good);box-shadow:0 2px 10px rgba(47,138,87,.15);border-radius:12px;padding:12px 14px;display:grid;gap:8px;align-content:center;cursor:pointer;min-width:0}
+.bankbal:hover{box-shadow:0 3px 14px rgba(47,138,87,.28)}
+.bankbal .bh{display:flex;align-items:center;gap:8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.bankbal .bh svg{width:26px;height:26px;flex:none;color:var(--good)}
+.bankbal .bh .bn{font-family:var(--f-display);font-weight:800;font-size:.95rem;color:var(--good);line-height:1.15;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.bankbal .bh .go{margin-left:auto;font-size:.75rem;color:var(--good);font-weight:600;white-space:nowrap}
+.bankbal .t{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.bankbal .r{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.bankbal .r .l{font-size:.85rem;color:var(--muted);white-space:nowrap}
+.bankbal .r .v{font-family:var(--f-num);font-size:1.05rem;font-weight:500;white-space:nowrap}
+.bankbal .sub{font-size:.75rem;color:var(--muted);text-align:right;margin-top:-6px}
+@media (max-width:560px){.toprow{flex-wrap:wrap;gap:6px}.toprow .ratebox{flex:1 1 0}.bankbal{order:3;flex:1 1 100%;padding:10px 12px}.toprow .ratebox{flex:1 1 0;min-width:0;padding:6px;gap:6px}.toprow .fuel{padding:6px}.toprow .kpi.hero{flex:0 0 120px;padding:8px 6px}.toprow .kpi.hero .l{font-size:.62rem}.toprow .kpi.hero .v{font-size:.86rem;overflow-wrap:anywhere}}
+.dayhead{flex-direction:column;align-items:stretch;flex-wrap:nowrap}
+@media (max-width:560px){.ratebox{gap:8px;padding:8px}.fuel{padding:8px}.fuel .row{flex-direction:column;align-items:flex-start;gap:3px}.fuel .row input.f{width:100%}.fuel .row .v{font-size:1rem}}
+.tag.ob{background:var(--accent-soft);color:var(--good)}
+.ratebox .rate.ob input.f{width:130px}
+.kpis{display:grid;grid-template-columns:minmax(0,1fr);max-width:520px;gap:10px;margin-bottom:14px}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.kpi .l{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.kpi .v{font-family:var(--f-num);font-size:1.2rem;font-weight:500;margin-top:2px;overflow-wrap:anywhere}
+.kpi.hero{background:var(--accent-soft);border-color:var(--line);color:var(--on-band);border-bottom:3px solid var(--red)}
+section.card h2{border-left:3px solid var(--red);padding-left:8px}
+.kpi.hero .l{color:inherit;opacity:.85}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+section.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 14px 14px;margin-bottom:14px;min-width:0}
+section.card h2{font-family:var(--f-display);font-weight:700;font-size:1rem;letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.tag{font:600 .7rem var(--f-body);letter-spacing:.06em;padding:2px 7px;border-radius:999px}
+.tag.hsd{background:var(--hsd-soft);color:var(--hsd)} .tag.ms{background:var(--ms-soft);color:var(--ms)}
+.tscroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right}
+td.out{font-family:var(--f-num);text-align:right;padding-right:8px;white-space:nowrap}
+tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
+input.f{width:100%;min-width:0;font:400 .95rem var(--f-body);padding:7px 8px;border:1px solid transparent;border-radius:6px;background:var(--field);color:var(--ink)}
+input.f.n{font-family:var(--f-num);text-align:right}
+select.f{width:100%;min-width:0;font:400 .9rem var(--f-body);padding:7px 6px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
+.w-bank{width:170px}
+.bk-acct{display:flex;gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:3px}
+.bk-acct button{border:0;background:none;color:var(--muted);font:600 .9rem var(--f-body);padding:7px 12px;border-radius:7px;cursor:pointer}
+.bk-acct button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.bk-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.bk-sum .kpi .v{font-size:1.05rem}
+@media (max-width:640px){.bk-sum{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.odbar{height:10px;border-radius:99px;background:var(--accent-soft);overflow:hidden;border:1px solid var(--line)}
+.odbar i{display:block;height:100%;background:var(--accent)}
+.odbar.hi i{background:var(--warn)}
+.bk-form{display:grid;grid-template-columns:140px minmax(0,1fr) 130px 120px 120px auto;gap:8px;align-items:end}
+.bk-form label{display:grid;gap:3px;font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;min-width:0}
+.bk-form input,.bk-form select,.bk-set input,.bk-set select,.brs input,.brs select{font:400 .95rem var(--f-body);padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);min-width:0;width:100%}
+.bk-form input.n,.bk-set input.n,.brs input.n{font-family:var(--f-num);text-align:right}
+@media (max-width:860px){.bk-form{grid-template-columns:repeat(2,minmax(0,1fr))}.bk-form .wide{grid-column:1/-1}}
+.bk-set{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end}
+.bk-set label{display:grid;gap:3px;font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;min-width:0}
+@media (max-width:640px){.bk-set{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ledger td.src{font-size:.72rem;color:var(--muted)}
+.ledger{min-width:680px}
+.ledger td:first-child,.ledger td.out{white-space:nowrap}
+.ledger tr.bf td,.ledger tr.cf td{font-weight:600;background:var(--accent-soft)}
+.ledger tr.daylink td:first-child{cursor:pointer}
+.chip{font:600 .68rem var(--f-body);padding:2px 6px;border-radius:99px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.chip.chip-ok{margin-left:6px;border:0;cursor:pointer;background:#e6f4ea;color:#1e7a3c}
+.chip.chip-no{margin-left:6px;background:#f1f3f7;color:var(--muted)}
+.ledger input[type=checkbox]{width:18px;height:18px;accent-color:var(--good)}
+.ledger td.acts{white-space:nowrap;text-align:right}
+.rowedit{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;padding:4px 8px;border-radius:6px}
+.rowedit:hover{color:var(--accent);background:var(--accent-soft)}
+.ledger tr.editing td{background:var(--cash-soft)}
+.ledger tr.editing input{font:400 .9rem var(--f-body);padding:6px;border:1px solid var(--accent);border-radius:6px;background:var(--paper);color:var(--ink);width:100%;min-width:0}
+.ledger tr.editing input.n{font-family:var(--f-num);text-align:right}
+.brs td{padding:6px}
+.brs .diff0{color:var(--good);font-weight:700}
+.brs .diffx{color:var(--warn);font-weight:700}
+
+.imp .imp-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+.imp .imp-row h2{margin:0}
+.imp-map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:8px 0}
+.imp-map label{display:grid;gap:3px;font-size:.72rem;color:var(--muted);font-weight:600;min-width:0}
+.imp-map select{font:400 .88rem var(--f-body);padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);min-width:0}
+@media (max-width:640px){.imp-map{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.imp-t{min-width:760px}
+.imp-t td:nth-child(3){max-width:280px}
+details.card>summary{cursor:pointer;font-family:var(--f-display);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+input.f:hover{border-color:var(--line)}
+input.f:focus{border-color:var(--accent);background:var(--paper)}
+input.f::placeholder{color:var(--muted);opacity:.75}
+input.f:disabled{background:none;color:var(--ink)}
+.w-chq{width:110px}.w-qty{width:110px}.w-amt{width:130px}.w-inv{width:110px}
+.rowdel{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:4px 8px;border-radius:6px}
+.rowdel:hover{color:var(--warn);background:var(--ms-soft)}
+.addrow{margin-top:8px}
+.warn{color:var(--warn);font-size:.8rem;font-weight:600}
+.hint{color:var(--muted);font-size:.8rem;margin:6px 0 0}
+.summary td{padding:7px 6px}
+.summary .lbl{color:var(--muted)}
+.summary tr.total td{font-weight:600;border-top:2px solid var(--line)}
+.summary tr.cih td{font-size:1.1rem;font-weight:700;color:var(--accent)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted);background:var(--paper);border:1px dashed var(--line);border-radius:12px}
+.month td,.month th{padding:6px 8px}
+.month tbody tr{cursor:pointer}
+.month tbody tr:hover td{background:var(--accent-soft)}
+.confirm{display:inline-flex;gap:6px;align-items:center;font-size:.85rem}
+.foot{color:var(--muted);font-size:.8rem;margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.foot img{width:20px;height:20px;border-radius:50%}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>BIHANI BROTHERS</h1>
+      <p>Prakash Chand &middot; Mobile 9460301561 &middot; Daily Day Book</p>
+    </div>
+  </header>
+
+  <!-- DAY VIEW -->
+  <div id="dayView">
+    <div class="bar">
+      <div class="nav">
+        <button class="btn" id="prevDay" aria-label="Previous day">&larr;</button>
+        <input type="date" id="datePick">
+        <button class="btn" id="nextDay" aria-label="Next day">&rarr;</button>
+        <button class="btn small ghost" id="todayBtn">Today</button>
+      </div>
+      <div class="tabs" id="tabs" role="tablist">
+        <button id="tabDay" role="tab" aria-selected="true">Day<span class="long"> entry</span></button>
+        <button id="tabMonth" role="tab" aria-selected="false">Month<span class="long"> summary</span></button>
+        <button id="tabSO" role="tab" aria-selected="false">SO<span class="long"> Report</span></button>
+      </div>
+      <div class="status"><span class="dot" id="sDot"></span><span id="sText">Connecting…</span></div>
+    </div>
+    <div id="remoteBanner" class="banner" hidden>
+      <span>Your partner just changed this day.</span>
+      <button class="btn small primary" id="loadRemote">Show their latest</button>
+      <span class="hint" style="margin:0">or keep typing to save yours over it.</span>
+    </div>
+    <div id="dayBody"></div>
+  </div>
+
+  <!-- MONTH VIEW -->
+  <div id="monthView" hidden>
+    <div class="bar">
+      <div class="nav">
+        <button class="btn" id="prevMonth" aria-label="Previous month">&larr;</button>
+        <input type="month" id="monthPick">
+        <button class="btn" id="nextMonth" aria-label="Next month">&rarr;</button>
+      </div>
+      <button class="btn small" id="exportCsv" hidden>Download CSV</button>
+      <div class="status"><span id="mText"></span></div>
+    </div>
+    <div id="monthBody"></div>
+  </div>
+
+  <!-- SALES OFFICER REPORT VIEW -->
+  <div id="soView" hidden>
+    <div class="bar">
+      <div class="nav"></div>
+      <div class="status"><span id="soText"></span></div>
+    </div>
+    <div id="soBody"></div>
+  </div>
+
+  <!-- TANKER VIEW -->
+  <div id="tankView" hidden>
+    <div class="bar">
+      <div class="nav">
+        <button class="btn" id="prevTMonth" aria-label="Previous month">&larr;</button>
+        <input type="month" id="tMonthPick">
+        <button class="btn" id="nextTMonth" aria-label="Next month">&rarr;</button>
+      </div>
+      <div class="status"><span id="tText"></span></div>
+    </div>
+    <div id="tankBody"></div>
+  </div>
+
+  <!-- BANK VIEW -->
+  <div id="bankView" hidden>
+    <div class="bar">
+      <div class="nav">
+        <button class="btn" id="prevBMonth" aria-label="Previous month">&larr;</button>
+        <input type="month" id="bMonthPick">
+        <button class="btn" id="nextBMonth" aria-label="Next month">&rarr;</button>
+      </div>
+      <div class="status"><span id="bText"></span></div>
+    </div>
+    <div id="bankBody"></div>
+  </div>
+</div>
+
+<datalist id="dlParty"></datalist>
+<datalist id="dlPart"></datalist>
+<datalist id="dlLube"></datalist>
+<datalist id="dlBank"></datalist>
+
+<script>
+(function(){
+"use strict";
+const HSD_N=7, MS_N=4, DEFAULT_RATE={hsd:99.28, ms:114.13};
+const $=s=>document.querySelector(s);
+const el=(t,a={},...kids)=>{const e=document.createElement(t);for(const k in a){if(k==="class")e.className=a[k];else if(k==="text")e.textContent=a[k];else if(k.startsWith("on"))e.addEventListener(k.slice(2),a[k]);else if(a[k]!==undefined&&a[k]!==null&&a[k]!==false)e.setAttribute(k,a[k]===true?"":a[k]);}for(const c of kids)if(c!=null)e.append(c);return e;};
+
+// ---------- formatting ----------
+const inr=n=>(n<0?"−":"")+"₹"+Math.abs(n).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const ltr=n=>(n<0?"−":"")+Math.abs(n).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const num=v=>{if(v===""||v===null||v===undefined)return null;const x=parseFloat(String(v).replace(/,/g,""));return isFinite(x)?x:null;};
+const z=v=>v==null?0:v;
+const r2=x=>Math.round(x*100)/100;
+const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${dd}`;};
+const parseISO=s=>{const[a,b,c]=s.split("-").map(Number);return new Date(a,b-1,c);};
+const addDays=(s,n)=>{const d=parseISO(s);d.setDate(d.getDate()+n);return iso(d);};
+const nice=s=>parseISO(s).toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+const short=s=>parseISO(s).toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
+
+// ---------- state ----------
+// mobile app jaisi jagah jahan download ki suvidha nahi milti: share sheet ya seedha download
+const MIME={pdf:"application/pdf",xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",csv:"text/csv"};
+const FALLBACK_DL={save:async({filename,data})=>{const ext=filename.split(".").pop().toLowerCase();const blob=new Blob([data],{type:MIME[ext]||"application/octet-stream"});
+  try{const f=new File([blob],filename,{type:blob.type});if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:filename});return{status:"saved"};}}catch(e){if(e&&e.name==="AbortError")return{status:"declined"};}
+  const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download=filename;a.rel="noopener";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);return{status:"saved"};}};
+let db=null, user=null, downloads=FALLBACK_DL, myId=null, canWrite=true, connected=false;
+const days=new Map();          // date -> stored doc (from db)
+let curDate=iso(new Date());
+let cur=null;                  // editable doc for curDate
+let dirty=false, saveTimer=null, saving=false, lastSaved="", editSeq=0;
+let pendingRemote=null;
+const LS={get:k=>{try{return localStorage.getItem(k)||"";}catch(e){return"";}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}}};
+const BANK_OPTS=[["","—"],["CA","Current A/c"],["OD","O/D A/c"]];
+// Receipt + bank = paisa bank mein AAYA (Credit); "-W" = bank se cash nikala (Debit).
+// Payment + bank = bank se DIYA (Debit); "-D" = cash bank mein jama (Credit).
+const REC_OPTS=[["","—"],["CA","Current A/c (Cr)"],["OD","O/D A/c (Cr)"],["CA-W","Current A/c (Dr)"],["OD-W","O/D A/c (Dr)"]];
+const PAY_OPTS=[["","—"],["CSH","Cash"],["CA","Current A/c (Dr)"],["OD","O/D A/c (Dr)"],["CA-D","Current A/c (Cr)"],["OD-D","O/D A/c (Cr)"]];
+const bankLbl=(key,v)=>{const o=(key==="rec"?REC_OPTS:PAY_OPTS).find(x=>x[0]===v);return v&&o?o[1]:"";};
+const ACCT_NAME={CA:"Current A/c",OD:"O/D A/c"};
+const bankMap=new Map();          // id -> manual bank entry
+let bankSet={CA:{},OD:{},stmt:{CA:{},OD:{}}}, bankSetKey="";
+
+function blank(date){return{date,hsd:{open:Array(HSD_N).fill(null),close:Array(HSD_N).fill(null),test:null},ms:{open:Array(MS_N).fill(null),close:Array(MS_N).fill(null),test:null},rate:{hsd:null,ms:null},openBal:null,lube:[],rec:[],pay:[],crH:[],crM:[]};}
+function normalize(d,date){const b=blank(date);if(!d)return b;const o=JSON.parse(JSON.stringify(d));
+  for(const k of ["hsd","ms"]){const n=k==="hsd"?HSD_N:MS_N;o[k]=o[k]||{};for(const f of ["open","close"]){const a=Array.isArray(o[k][f])?o[k][f]:[];o[k][f]=Array.from({length:n},(_,i)=>a[i]??null);}o[k].test=o[k].test??null;}
+  o.rate=Object.assign({hsd:null,ms:null},o.rate||{});o.openBal=o.openBal??null;
+  for(const k of ["lube","rec","pay","crH","crM"])o[k]=Array.isArray(o[k])?o[k]:[];
+  o.date=date;return o;}
+// Order-independent comparison: the server may return keys in a different order than we wrote them.
+const sortDeep=x=>Array.isArray(x)?x.map(sortDeep):(x&&typeof x==="object")?Object.keys(x).sort().reduce((o,k)=>(o[k]=sortDeep(x[k]),o),{}):x;
+const contentKey=d=>{if(!d)return"";const n=normalize(d,d.date||curDate);delete n.by;delete n.at;
+  for(const k of ["lube","rec","pay","crH","crM"])n[k]=n[k].filter(r=>Object.values(r).some(v=>v!=null&&v!==""));
+  return JSON.stringify(sortDeep(n));};
+
+// ---------- calculation (mirrors the Excel day sheet) ----------
+// Opening readings, opening balance and rates carry forward from the latest earlier saved day.
+function calcDay(doc,prev){
+  const out={};
+  const meter=(k,n)=>{const o=[],sales=[];let tot=0;for(let i=0;i<n;i++){
+      let op=doc[k].open[i]; let carried=false;
+      if(op==null&&prev){const pc=prev[k].closeEff[i];op=pc!=null?pc:prev[k].openEff[i];carried=op!=null;}
+      const cl=doc[k].close[i]; const s=(op!=null&&cl!=null)?r2(cl-op):0; tot+=s;
+      o.push({open:op,carried,close:cl,sale:s});}
+    return{rows:o,openEff:o.map(r=>r.open),closeEff:o.map(r=>r.close),gross:r2(tot),test:z(doc[k].test),total:r2(tot-z(doc[k].test))};};
+  out.hsd=meter("hsd",HSD_N); out.ms=meter("ms",MS_N);
+  out.rateH=doc.rate.hsd??(prev?prev.rateH:DEFAULT_RATE.hsd); out.rateHcarried=doc.rate.hsd==null;
+  out.rateM=doc.rate.ms??(prev?prev.rateM:DEFAULT_RATE.ms); out.rateMcarried=doc.rate.ms==null;
+  const sumQ=a=>r2(a.reduce((s,r)=>s+z(num(r.qty)),0));
+  out.crHqty=sumQ(doc.crH); out.crMqty=sumQ(doc.crM);
+  out.crHamt=r2(out.crHqty*out.rateH); out.crMamt=r2(out.crMqty*out.rateM);
+  out.cashHqty=r2(out.hsd.total-out.crHqty); out.cashMqty=r2(out.ms.total-out.crMqty);
+  out.cashHamt=r2(out.cashHqty*out.rateH); out.cashMamt=r2(out.cashMqty*out.rateM);
+  out.lube=r2(doc.lube.reduce((s,r)=>s+z(num(r.amt)),0));
+  out.rec=r2(doc.rec.reduce((s,r)=>s+z(num(r.amt)),0));
+  out.pay=r2(doc.pay.reduce((s,r)=>s+z(num(r.amt)),0));
+  out.openBal=doc.openBal??(prev?prev.cih:0); out.openBalCarried=doc.openBal==null;
+  out.grand=r2(out.openBal+out.cashHamt+out.cashMamt+out.lube+out.rec);
+  out.cih=r2(out.grand-out.pay);
+  return out;}
+
+function sortedDates(){return[...days.keys()].sort();}
+// compute every saved day in order; return map date->calc
+function calcAll(override){
+  const res=new Map();let prev=null;
+  const ds=new Set(sortedDates()); if(override)ds.add(override.date);
+  for(const d of [...ds].sort()){const doc=(override&&override.date===d)?override:normalize(days.get(d),d);const c=calcDay(doc,prev);res.set(d,c);prev=c;}
+  return res;}
+function calcFor(doc){ // calc for one day using chain
+  let prev=null;for(const d of sortedDates()){if(d>=doc.date)break;prev=calcDay(normalize(days.get(d),d),prev);}
+  return calcDay(doc,prev);}
+
+// ---------- status ----------
+function status(kind,text){$("#sDot").className="dot "+(kind||"");$("#sText").textContent=text;}
+function idleStatus(){
+  if(!connected){status("err","Not connected — entries on this screen are not saved");return;}
+  if(!canWrite){status("","View only");return;}
+  const d=days.get(curDate);
+  if(dirty)status("busy","Unsaved changes…");
+  else if(d&&d.at)status("ok","Saved "+new Date(d.at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}));
+  else status("ok","Not started — type to begin");}
+
+// ---------- rendering: day ----------
+function inp(path,val,o={}){
+  const e=el("input",{class:"f"+(o.n?" n":""),id:"f-"+path.replace(/\./g,"-"),"data-p":path,inputmode:o.n?"decimal":undefined,placeholder:o.ph||"",list:o.list,autocomplete:"off",disabled:!canWrite||undefined,"aria-label":o.label||path});
+  e.value=val==null?"":val; if(o.cls)e.classList.add(o.cls); return e;}
+function out(key,cls){return el("td",{class:"out"+(cls?" "+cls:""),"data-o":key});}
+
+function meterCard(k,label,n){
+  const t=el("table");
+  t.append(el("thead",{},el("tr",{},el("th",{text:"Nozzle"}),el("th",{class:"num",text:"Opening"}),el("th",{class:"num",text:"Closing"}),el("th",{class:"num",text:"Sale (Ltr)"}))));
+  const tb=el("tbody");
+  for(let i=0;i<n;i++){tb.append(el("tr",{},el("td",{text:`${label} ${i+1}`}),
+    el("td",{},inp(`${k}.open.${i}`,cur[k].open[i],{n:1,label:`${label} ${i+1} opening`})),
+    el("td",{},inp(`${k}.close.${i}`,cur[k].close[i],{n:1,label:`${label} ${i+1} closing`})),
+    out(`${k}.sale.${i}`)));}
+  tb.append(el("tr",{},el("td",{text:"Less: Testing"}),el("td"),el("td",{},inp(`${k}.test`,cur[k].test,{n:1,label:`${label} testing litres`})),out(`${k}.testv`)));
+  t.append(tb);
+  t.append(el("tfoot",{},el("tr",{},el("td",{colspan:3,text:"Total sale"}),out(`${k}.total`))));
+  return el("section",{class:"card"},el("h2",{},`Meter reading`,el("span",{class:"tag "+k,text:label})),el("div",{class:"tscroll"},t),
+    el("p",{class:"hint",text:"Grey opening figures are carried from the previous day's closing. Type over them only if needed."}));}
+
+function listCard(key,title,cols,addLabel,tagCls){
+  const t=el("table");const hr=el("tr");for(const c of cols)hr.append(el("th",{class:c.n||c.calc?"num":"",text:c.h}));hr.append(el("th"));
+  t.append(el("thead",{},hr));const tb=el("tbody");
+  cur[key].forEach((row,i)=>{const tr=el("tr");
+    for(const c of cols){
+      if(c.calc)tr.append(out(`${key}.${i}.${c.calc}`));
+      else if(c.sel&&c.f==="bank"&&row.stm){tr.append(el("td",{class:c.w||""},el("span",{class:"chip",title:"Bank statement se aayi entry",text:"🏦 Statement ("+(String(row.stm).startsWith("OD")?"O/D":"CA")+")"})));}
+      else if(c.sel){const td=el("td",{class:c.w||""});const se=el("select",{class:"f",id:`f-${key}-${i}-${c.f}`,"data-p":`${key}.${i}.${c.f}`,disabled:!canWrite||undefined,"aria-label":`${title} row ${i+1} ${c.h}`},...c.sel.map(([v,t])=>el("option",{value:v,text:t})));se.value=row[c.f]||"";td.append(se);tr.append(td);}
+      else{const td=el("td",{class:c.w||""});td.append(inp(`${key}.${i}.${c.f}`,row[c.f],{n:c.n,list:c.list,ph:c.phFn?c.phFn(row,i):c.ph,label:`${title} row ${i+1} ${c.h}`}));tr.append(td);}}
+    tr.append(el("td",{},canWrite?el("button",{class:"rowdel","aria-label":"Remove row",title:"Remove row",onclick:()=>{cur[key].splice(i,1);touch();renderDay();}},"×"):null));
+    tb.append(tr);});
+  if(!cur[key].length)tb.append(el("tr",{},el("td",{colspan:cols.length+1,class:"hint",text:"No entries yet."})));
+  t.append(tb);
+  const totCol=cols.findIndex(c=>c.total);
+  if(totCol>=0){const fr=el("tr");cols.forEach((c,j)=>{if(j===totCol)fr.append(out(`${key}.total`));else if(j===0&&totCol!==0)fr.append(el("td",{text:"Total"}));else fr.append(el("td"));});fr.append(el("td"));t.append(el("tfoot",{},fr));}
+  const h=el("h2",{},title);if(tagCls)h.append(el("span",{class:"tag "+tagCls,text:tagCls.toUpperCase()}));
+  return el("section",{class:"card"},h,el("div",{class:"tscroll"},t),
+    canWrite?el("button",{class:"btn small addrow",onclick:()=>{const r={};cols.forEach(c=>{if(c.f)r[c.f]=null;});cur[key].push(r);touch();renderDay();const ins=document.querySelectorAll(`[data-p^="${key}.${cur[key].length-1}."]`);if(ins[0])ins[0].focus();}},"+ "+addLabel):null);}
+
+function renderDay(){
+  const body=$("#dayBody");const keep=document.activeElement&&document.activeElement.id;
+  body.replaceChildren();
+  const stored=days.get(curDate);
+  body.append(el("div",{class:"dayhead"},
+    el("div",{class:"titlerow"},el("div",{class:"daytitle",text:nice(curDate)}),(()=>{const chip=el("button",{class:"tankchip",type:"button",title:"Tanker ka stock dekho",onclick:()=>showTab("tank")},el("span",{class:"tk-ico"}),el("span",{class:"tk-no",text:TRUCK_NO}));chip.firstChild.innerHTML=TANKER_SVG;if(!downloads)return el("div",{class:"titlebtns"},chip);const w=el("div",{class:"expwrap"});const menu=el("div",{class:"expmenu",hidden:true,role:"menu"},el("button",{type:"button",role:"menuitem",onclick:()=>{menu.hidden=true;exportDay();}},el("span",{class:"xl",text:"X"}),"Excel (.xlsx)"));const b=el("button",{class:"btn small",id:"expBtn",type:"button","aria-haspopup":"menu",title:"Is din ki file download karo",onclick:ev=>{ev.stopPropagation();document.querySelectorAll(".expmenu").forEach(m=>{if(m!==menu)m.hidden=true;});menu.hidden=!menu.hidden;}},"Export ▾");const pw=el("div",{class:"expwrap"});const pm=el("div",{class:"expmenu",hidden:true,role:"menu"},el("button",{type:"button",role:"menuitem",onclick:()=>{pm.hidden=true;exportPdf("read");}},el("span",{class:"xl pdf",text:"P"}),"With reading"),el("button",{type:"button",role:"menuitem",onclick:()=>{pm.hidden=true;exportPdf("noread");}},el("span",{class:"xl pdf",text:"P"}),"Without reading"),el("div",{class:"prepopt",onclick:ev=>ev.stopPropagation()},el("div",{class:"prephd",text:"Prepared by"}),...["Prakash Chand","Vikas Swami"].map(v=>{const r=el("input",{type:"checkbox",class:"prepchk",value:v});r.checked=prepBy===v;r.addEventListener("change",()=>{prepBy=r.checked?v:"";LS.set("bb.prep",prepBy);r.closest(".prepopt").querySelectorAll(".prepchk").forEach(x=>{if(x!==r)x.checked=false;});});return el("label",{},r,v);})));const pr=el("button",{class:"btn small",id:"prtBtn",type:"button","aria-haspopup":"menu",title:"Print ke liye PDF banao",onclick:ev=>{ev.stopPropagation();menu.hidden=true;pm.hidden=!pm.hidden;}},"Print ▾");pw.append(pr,pm);const imB=canWrite?el("button",{class:"btn small",id:"riBtn",type:"button",title:"DSR photo ya Excel se meter reading bharo",onclick:riOpen},"Import"):null;const g=el("div",{class:"titlebtns"},chip,pw,w,imB);w.append(b,menu);return g;})()),
+    el("div",{class:"ratebox"},
+      el("div",{class:"fuel hsd"},el("div",{class:"fh",text:"HSD"}),
+        el("label",{class:"row",for:"f-rate-hsd"},el("span",{class:"l",text:"Rate ₹/Ltr"}),inp("rate.hsd",cur.rate.hsd,{n:1,label:"HSD rate"})),
+        el("div",{class:"row"},el("span",{class:"l",text:"Sale (Ltr)"}),el("span",{class:"v","data-o":"k.hsd"}))),
+      el("div",{class:"fuel ms"},el("div",{class:"fh",text:"MS"}),
+        el("label",{class:"row",for:"f-rate-ms"},el("span",{class:"l",text:"Rate ₹/Ltr"}),inp("rate.ms",cur.rate.ms,{n:1,label:"MS rate"})),
+        el("div",{class:"row"},el("span",{class:"l",text:"Sale (Ltr)"}),el("span",{class:"v","data-o":"k.ms"}))),
+      el("span",{class:"hint ratehint","data-o":"rateNote"}))));
+  { const rb=body.querySelector(".ratebox"); const row=el("div",{class:"toprow"}); rb.before(row);
+    const bb=el("div",{class:"bankbal",role:"button",tabindex:0,title:"Bank book kholne ke liye click karo",onclick:()=>showTab("bank"),onkeydown:e=>{if(e.key==="Enter")showTab("bank");}},
+      (()=>{const h=el("div",{class:"bh"});h.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 4l9 5.5"/><path d="M4 10h16"/><path d="M6 10v8M10 10v8M14 10v8M18 10v8"/><path d="M3 20h18"/></svg>';h.append(el("span",{class:"bn","data-o":"k.bname"}),el("span",{class:"go",text:"Bank book ›"}));return h;})(),
+      el("div",{class:"t",text:"Bank balance"}),
+      el("div",{class:"r"},el("span",{class:"l",text:"Current A/c"}),el("span",{class:"v","data-o":"k.ca"})),
+      el("div",{class:"r"},el("span",{class:"l",text:"O/D A/c"}),el("span",{class:"v","data-o":"k.od"})),
+      el("div",{class:"sub","data-o":"k.odav"}));
+    row.append(rb, bb, el("div",{class:"kpi hero"},el("div",{class:"ob"},el("span",{class:"obl",text:"Opening balance"}),el("span",{class:"obv","data-o":"k.ob"})),el("div",{class:"l",text:"Cash in hand"}),el("div",{class:"v","data-o":"k.cih"}))); }
+
+  const left=el("div"),right=el("div");
+  left.append(meterCard("hsd","HSD",HSD_N));
+  right.append(meterCard("ms","MS",MS_N));
+
+  // Cash sale
+  const cs=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Item"}),el("th",{class:"num",text:"Rate (₹/Ltr)"}),el("th",{class:"num",text:"Cash qty (Ltr)"}),el("th",{class:"num",text:"Amount"}))),
+    el("tbody",{},
+      el("tr",{},el("td",{},el("span",{class:"tag hsd",text:"HSD"})),out("rateHv"),out("cashHqty"),out("cashHamt")),
+      el("tr",{},el("td",{},el("span",{class:"tag ms",text:"MS"})),out("rateMv"),out("cashMqty"),out("cashMamt"))),
+    el("tfoot",{},el("tr",{},el("td",{colspan:3,text:"Total cash sale (fuel)"}),out("cashTot"))));
+  const cashCard=el("section",{class:"card"},el("h2",{text:"Cash sale"}),el("div",{class:"tscroll"},cs),el("div",{"data-o":"cashWarn",class:"warn"}),
+    el("p",{class:"hint",text:"Cash qty = total sale − credit qty. Rate carries forward from the previous day until you change it."}));
+
+  const crCols=[{h:"Party name",f:"party",list:"dlParty"},{h:"Qty (Ltr)",f:"qty",n:1,w:"w-qty"},{h:"Invoice no.",f:"inv",w:"w-inv"},{h:"Amount",calc:"amt",total:1}];
+  const grid=el("div",{class:"grid2"},
+    el("div",{},left.firstChild,cashCard,listCard("crH","Credit sale",crCols,"Add HSD credit","hsd")),
+    el("div",{},right.firstChild,listCard("crM","Credit sale",crCols,"Add MS credit","ms"),
+      listCard("lube","Cash sale – lube",[{h:"Item",f:"item",list:"dlLube"},{h:"Qty",f:"qty",n:1,w:"w-qty"},{h:"Amount (₹)",f:"amt",n:1,w:"w-amt",total:1}],"Add lube sale")));
+  body.append(grid);
+
+  // Receipts / Payments
+  const rp=el("div",{class:"grid2"},
+    listCard("rec","Bank & other receipts",[{h:"Particulars",f:"part",list:"dlPart"},{h:"Bank",f:"bank",sel:REC_OPTS,w:"w-bank"},{h:"Amount (₹)",f:"amt",n:1,w:"w-amt",total:1}],"Add receipt"),
+    listCard("pay","Bank & other payments",[{h:"Particulars",f:"part",list:"dlPart"},{h:"Bank",f:"bank",sel:PAY_OPTS,w:"w-bank"},{h:"Cheque no.",f:"chq",w:"w-chq",phFn:(row,i)=>stmChq(cur.date,"pay",i)},{h:"Amount (₹)",f:"amt",n:1,w:"w-amt",total:1}],"Add payment"));
+  rp.children[0].append(el("p",{class:"hint",text:"Bank se cash nikala ho to 'From bank' mein account chuno — Bank Book mein Debit apne aap aayega."}));
+  rp.children[1].append(el("p",{class:"hint",text:"Cash bank mein jama kiya ho to 'To bank' mein account chuno — Bank Book mein Credit apne aap aayega."}));
+  body.append(rp);
+
+  // Summary
+  const s=el("table",{class:"summary"},el("tbody",{},
+    el("tr",{},el("td",{class:"lbl",text:"Opening balance (cash)"}),el("td",{class:"w-amt"},inp("openBal",cur.openBal,{n:1,label:"Opening balance"}))),
+    el("tr",{},el("td",{class:"lbl",text:"Add: Cash sale HSD"}),out("s.h")),
+    el("tr",{},el("td",{class:"lbl",text:"Add: Cash sale MS"}),out("s.m")),
+    el("tr",{},el("td",{class:"lbl",text:"Add: Cash sale lube"}),out("s.l")),
+    el("tr",{},el("td",{class:"lbl",text:"Add: Bank & other receipts"}),out("s.r")),
+    el("tr",{class:"total"},el("td",{text:"Grand total"}),out("s.g")),
+    el("tr",{},el("td",{class:"lbl",text:"Less: Bank & other payments"}),out("s.p")),
+    el("tr",{class:"cih"},el("td",{text:"Cash in hand"}),out("s.c"))));
+  const sum=el("section",{class:"card"},el("h2",{text:"Cash book"}),s,el("p",{class:"hint",text:"Opening balance = pichhle din ka cash in hand (grey). Badalna ho to yahin likho."}));
+  const foot=el("div",{class:"foot",id:"whoSaved"});
+  const clear=el("span",{class:"confirm"});
+  if(canWrite&&stored){const b=el("button",{class:"btn small danger",onclick:()=>{clear.replaceChildren(el("span",{text:"Delete all entries for this day?"}),el("button",{class:"btn small danger",onclick:delDay},"Delete"),el("button",{class:"btn small",onclick:()=>renderDay()},"Cancel"));}},"Delete this day");clear.append(b);}
+  body.append(el("div",{class:"grid2"},sum,el("div",{},foot,clear)));
+  recalc();renderWho();
+  if(keep){const e=document.getElementById(keep);if(e)e.focus();}
+}
+
+async function renderWho(){
+  const f=$("#whoSaved");if(!f)return;const d=days.get(curDate);f.replaceChildren();
+  if(!d||!d.at)return;
+  const when=new Date(d.at).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+  if(d.by&&user){try{const ps=await user.profiles([d.by]);const p=ps[d.by];f.append(el("img",{src:p.avatarUrl,alt:""}),el("span",{text:`Last saved by ${p.isMe?"you":(p.name||"your partner")} · ${when}`}));return;}catch(e){}}
+  f.append(el("span",{text:"Last saved "+when}));}
+
+function setOut(key,text,warn){document.querySelectorAll(`[data-o="${key}"]`).forEach(e=>{e.textContent=text;e.classList.toggle("warn",!!warn);});}
+function recalc(){
+  const c=calcFor(cur);
+  for(const k of ["hsd","ms"]){const m=c[k];m.rows.forEach((r,i)=>{setOut(`${k}.sale.${i}`,ltr(r.sale),r.sale<0);
+      const ie=document.querySelector(`[data-p="${k}.open.${i}"]`);if(ie)ie.placeholder=r.carried?ltr(r.open):"";});
+    setOut(`${k}.testv`,m.test?"−"+ltr(m.test):"—");setOut(`${k}.total`,ltr(m.total)+" L");}
+  const ph=(p,v)=>{const e=document.querySelector(`[data-p="${p}"]`);if(e)e.placeholder=v;};
+  ph("rate.hsd",String(c.rateH));ph("rate.ms",String(c.rateM));
+  setOut("rateHv",c.rateH.toFixed(2));setOut("rateMv",c.rateM.toFixed(2));
+  setOut("rateNote",(c.rateHcarried&&c.rateMcarried)?"Grey = pichhle din ka rate. Naya rate ho to yahan likho.":"Is din ka rate badla gaya hai. Aage ke din yahi rate lenge.");ph("openBal",c.openBalCarried?c.openBal.toLocaleString("en-IN",{minimumFractionDigits:2}):"");setOut("s.o",inr(c.openBal));
+  setOut("cashHqty",ltr(c.cashHqty),c.cashHqty<0);setOut("cashMqty",ltr(c.cashMqty),c.cashMqty<0);
+  setOut("cashHamt",inr(c.cashHamt));setOut("cashMamt",inr(c.cashMamt));setOut("cashTot",inr(r2(c.cashHamt+c.cashMamt)));
+  const w=[];if(c.cashHqty<0)w.push("HSD credit is more than HSD sale — check readings.");if(c.cashMqty<0)w.push("MS credit is more than MS sale — check readings.");
+  setOut("cashWarn",w.join(" "),w.length);
+  cur.crH.forEach((r,i)=>setOut(`crH.${i}.amt`,inr(r2(z(num(r.qty))*c.rateH))));
+  cur.crM.forEach((r,i)=>setOut(`crM.${i}.amt`,inr(r2(z(num(r.qty))*c.rateM))));
+  setOut("crH.total",inr(c.crHamt));setOut("crM.total",inr(c.crMamt));
+  setOut("lube.total",inr(c.lube));setOut("rec.total",inr(c.rec));setOut("pay.total",inr(c.pay));
+  setOut("s.h",inr(c.cashHamt));setOut("s.m",inr(c.cashMamt));setOut("s.l",inr(c.lube));setOut("s.r",inr(c.rec));
+  setOut("s.g",inr(c.grand));setOut("s.p",inr(c.pay));setOut("s.c",inr(c.cih),c.cih<0);
+  { const bal=a=>{const op=acctOpening(a);let b=op.amt;for(const e of bankEntries(a))if(e.date<=cur.date)b+=e.jama-e.nik;return r2(b);};
+    const ca=bal("CA"),od=bal("OD"),L=z(num((bankSet.OD||{}).limit));
+    setOut("k.bname",((bankSet.CA||{}).bankName||(bankSet.OD||{}).bankName||"Rajasthan Gramin Bank"));setOut("k.ca",balTxt(ca));setOut("k.od",balTxt(od));setOut("k.odav",L?"O/D bacha limit: "+inr(r2(L+od)):"",L&&L+od<0); }
+  setOut("k.hsd",ltr(c.hsd.total)+" L");setOut("k.ms",ltr(c.ms.total)+" L");setOut("k.cr",inr(r2(c.crHamt+c.crMamt)));setOut("k.cih",inr(c.cih));setOut("k.ob",inr(c.openBal));
+}
+
+// ---------- editing ----------
+function setPath(obj,path,val){const p=path.split(".");let o=obj;for(let i=0;i<p.length-1;i++)o=o[isNaN(p[i])?p[i]:+p[i]];const last=p[p.length-1];o[isNaN(last)?last:+last]=val;}
+const TEXT_FIELDS=new Set(["party","inv","part","item","bank","chq"]);
+document.addEventListener("input",e=>{
+  const p=e.target.getAttribute&&e.target.getAttribute("data-p");if(!p||!cur)return;
+  const last=p.split(".").pop();
+  const v=TEXT_FIELDS.has(last)?(e.target.value.trim()===""?null:e.target.value):num(e.target.value);
+  setPath(cur,p,v);touch();recalc();});
+function touch(){if(!canWrite)return;dirty=true;editSeq++;$("#remoteBanner").hidden=true;pendingRemote=null;idleStatus();clearTimeout(saveTimer);saveTimer=setTimeout(save,1200);}
+
+function isEmptyDoc(d){const a=x=>x.every(v=>v==null);return a(d.hsd.open)&&a(d.hsd.close)&&d.hsd.test==null&&a(d.ms.open)&&a(d.ms.close)&&d.ms.test==null&&d.rate.hsd==null&&d.rate.ms==null&&d.openBal==null&&!["lube","rec","pay","crH","crM"].some(k=>d[k].length);}
+
+async function save(){
+  if(!db||!canWrite||!dirty)return;
+  if(saving){clearTimeout(saveTimer);saveTimer=setTimeout(save,600);return;}
+  saving=true;const seq=editSeq;const date=cur.date;const body=JSON.parse(JSON.stringify(cur));
+  // drop fully blank list rows
+  for(const k of ["lube","rec","pay","crH","crM"])body[k]=body[k].filter(r=>Object.values(r).some(v=>v!=null&&v!==""));
+  body.by=myId||null;body.at=new Date().toISOString();
+  status("busy","Saving…");
+  try{
+    if(!(isEmptyDoc(normalize(body,date))&&!days.has(date))){await db.doc("days/"+date).set(body);lastSaved=contentKey(body);days.set(date,body);}
+    if(editSeq===seq)dirty=false;
+    idleStatus();renderWho();
+  }catch(err){
+    if(err&&err.code==="invalid_argument"){canWrite=false;status("err","You have view-only access. Ask the owner to make you an Editor.");renderDay();}
+    else status("err","Could not save — will retry. ("+(err&&err.code||"error")+")");
+    if(canWrite){clearTimeout(saveTimer);saveTimer=setTimeout(save,4000);}
+  }finally{saving=false;}
+}
+async function flush(){clearTimeout(saveTimer);saveTimer=null;if(dirty)await save();}
+
+async function delDay(){
+  if(!db)return;try{await db.doc("days/"+curDate).delete();days.delete(curDate);dirty=false;loadDay(curDate);}catch(e){status("err","Could not delete — try again.");}}
+
+async function loadDay(date){
+  await flush();curDate=date;$("#datePick").value=date;
+  cur=normalize(days.get(date),date);dirty=false;pendingRemote=null;$("#remoteBanner").hidden=true;
+  renderDay();idleStatus();
+  try{localStorage.setItem("bb.lastTab","day");}catch(e){}
+}
+
+// ---------- suggestions ----------
+function refreshLists(){
+  const party=new Set(),part=new Set(),lube=new Set();
+  for(const d of days.values()){(d.crH||[]).concat(d.crM||[]).forEach(r=>r.party&&party.add(r.party));(d.rec||[]).concat(d.pay||[]).forEach(r=>r.part&&part.add(r.part));(d.lube||[]).forEach(r=>r.item&&lube.add(r.item));}
+  const fill=(id,set)=>$(id).replaceChildren(...[...set].sort().map(v=>el("option",{value:v})));
+  const bp=new Set();for(const e of bankMap.values())if(e.part)bp.add(e.part);
+  fill("#dlParty",party);fill("#dlPart",part);fill("#dlLube",lube);fill("#dlBank",bp);}
+
+// ---------- month view ----------
+let curMonth=curDate.slice(0,7);
+function monthRows(){
+  const all=calcAll();const rows=[];
+  for(const [d,c] of all){if(d.slice(0,7)!==curMonth)continue;rows.push({d,c,doc:normalize(days.get(d),d)});}
+  return rows;}
+function renderMonth(){
+  $("#monthPick").value=curMonth;const body=$("#monthBody");body.replaceChildren();
+  const rows=monthRows();
+  const mName=parseISO(curMonth+"-01").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  body.append(el("div",{class:"daytitle",text:mName}));
+  $("#mText").textContent=rows.length?`${rows.length} day${rows.length>1?"s":""} entered`:"";
+  $("#exportCsv").hidden=!(downloads&&rows.length);
+  if(!rows.length){body.append(el("div",{class:"empty"},el("p",{text:"No days entered for this month yet."}),el("button",{class:"btn primary",onclick:()=>{showTab("day");loadDay(iso(new Date()).startsWith(curMonth)?iso(new Date()):curMonth+"-01");}},"Start a day entry")));return;}
+  const T={h:0,m:0,cash:0,cr:0,lube:0,rec:0,pay:0};
+  const hdr=["Date","HSD (L)","MS (L)","Cash sale fuel","Credit sale","Lube","Receipts","Payments","Cash in hand"];
+  const t=el("table",{class:"month"});t.append(el("thead",{},el("tr",{},...hdr.map((h,i)=>el("th",{class:i?"num":"",text:h})))));
+  const tb=el("tbody");
+  for(const{d,c}of rows){const cash=r2(c.cashHamt+c.cashMamt),cr=r2(c.crHamt+c.crMamt);
+    T.h+=c.hsd.total;T.m+=c.ms.total;T.cash+=cash;T.cr+=cr;T.lube+=c.lube;T.rec+=c.rec;T.pay+=c.pay;
+    tb.append(el("tr",{tabindex:0,onclick:()=>{showTab("day");loadDay(d);},onkeydown:e=>{if(e.key==="Enter"){showTab("day");loadDay(d);}}},
+      el("td",{text:short(d)}),el("td",{class:"out",text:ltr(c.hsd.total)}),el("td",{class:"out",text:ltr(c.ms.total)}),
+      el("td",{class:"out",text:inr(cash)}),el("td",{class:"out",text:inr(cr)}),el("td",{class:"out",text:inr(c.lube)}),
+      el("td",{class:"out",text:inr(c.rec)}),el("td",{class:"out",text:inr(c.pay)}),el("td",{class:"out"+(c.cih<0?" warn":""),text:inr(c.cih)})));}
+  t.append(tb);
+  const last=rows[rows.length-1].c;
+  t.append(el("tfoot",{},el("tr",{},el("td",{text:"Total"}),el("td",{class:"out",text:ltr(r2(T.h))}),el("td",{class:"out",text:ltr(r2(T.m))}),
+    el("td",{class:"out",text:inr(r2(T.cash))}),el("td",{class:"out",text:inr(r2(T.cr))}),el("td",{class:"out",text:inr(r2(T.lube))}),
+    el("td",{class:"out",text:inr(r2(T.rec))}),el("td",{class:"out",text:inr(r2(T.pay))}),el("td",{class:"out",text:inr(last.cih)}))));
+  body.append(el("section",{class:"card"},el("h2",{text:"Day-wise summary"}),el("div",{class:"tscroll"},t),el("p",{class:"hint",text:"Tap a day to open it. Cash in hand total shows the closing figure of the last day entered."})));
+
+  // party-wise credit
+  const P=new Map();
+  for(const{doc,c}of rows){for(const[k,rate,fuel]of[["crH",c.rateH,"HSD"],["crM",c.rateM,"MS"]])for(const r of doc[k]){const q=z(num(r.qty));if(!q&&!r.party)continue;const name=(r.party||"(no name)").trim();
+      const p=P.get(name)||{hq:0,ha:0,mq:0,ma:0};if(fuel==="HSD"){p.hq+=q;p.ha+=q*rate;}else{p.mq+=q;p.ma+=q*rate;}P.set(name,p);}}
+  if(P.size){const pt=el("table",{class:"month"});pt.append(el("thead",{},el("tr",{},...["Party","HSD (L)","HSD amount","MS (L)","MS amount","Total"].map((h,i)=>el("th",{class:i?"num":"",text:h})))));
+    const pb=el("tbody");let G=0;
+    for(const[n,p]of[...P].sort((a,b)=>(b[1].ha+b[1].ma)-(a[1].ha+a[1].ma))){const tot=r2(p.ha+p.ma);G+=tot;
+      pb.append(el("tr",{style:"cursor:default"},el("td",{text:n}),el("td",{class:"out",text:ltr(r2(p.hq))}),el("td",{class:"out",text:inr(r2(p.ha))}),el("td",{class:"out",text:ltr(r2(p.mq))}),el("td",{class:"out",text:inr(r2(p.ma))}),el("td",{class:"out",text:inr(tot)})));}
+    pt.append(pb);pt.append(el("tfoot",{},el("tr",{},el("td",{text:"Total"}),el("td"),el("td"),el("td"),el("td"),el("td",{class:"out",text:inr(r2(G))}))));
+    body.append(el("section",{class:"card"},el("h2",{text:"Party-wise credit this month"}),el("div",{class:"tscroll"},pt)));}
+}
+async function exportCsv(){
+  if(!downloads)return;const rows=monthRows();
+  const q=s=>`"${String(s).replace(/"/g,'""')}"`;
+  const lines=[["Date","HSD sale (L)","MS sale (L)","HSD rate","MS rate","Cash HSD (L)","Cash MS (L)","Cash sale fuel","Credit HSD","Credit MS","Lube","Receipts","Payments","Opening balance","Cash in hand"].map(q).join(",")];
+  for(const{d,c}of rows)lines.push([d,c.hsd.total,c.ms.total,c.rateH,c.rateM,c.cashHqty,c.cashMqty,r2(c.cashHamt+c.cashMamt),c.crHamt,c.crMamt,c.lube,c.rec,c.pay,c.openBal,c.cih].map(q).join(","));
+  try{await downloads.save({filename:`Bihani-Brothers-DayBook-${curMonth}.csv`,data:lines.join("\r\n")});}catch(e){if(e&&e.code!=="declined")$("#mText").textContent="Download did not start.";}
+}
+
+
+// ---------- bank book ----------
+let curAcct=LS.get("bb.acct")==="OD"?"OD":"CA", bMonth="", bkEdit=null;
+const balTxt=b=>inr(Math.abs(b))+(b<0?" Dr":" Cr");
+function acctOpening(a){const st=bankSet[a]||{};return{amt:z(num(st.open))*(st.openDr?-1:1),date:st.openDate||""};}
+const AUTO_LINK={CA:new Map(),OD:new Map()};
+const chqOf=e=>{if(!e)return"";if(e.ref)return String(e.ref).trim();const m=String(e.part||"").match(/CHQ[^0-9]{0,6}(\d{4,})/i);return m?m[1]:"";};
+// statement entry jo day book ki is line se judi hai (auto milan ya "Day book mein bhejo")
+function stmFor(date,key,i){for(const a of ["CA","OD"]){for(const [id,L] of AUTO_LINK[a])if(L.date===date&&L.key===key&&L.i===i)return bankMap.get(id);}
+  const doc=date===curDate&&cur?cur:days.get(date);const r=doc&&doc[key]&&doc[key][i];if(r&&r.stm){const id=String(r.stm).split(":")[1];return bankMap.get(id);}return null;}
+function stmChq(date,key,i){if(i<0)return"";bankEntries("CA");bankEntries("OD");return chqOf(stmFor(date,key,i));} // statement entry id -> day book row jo usi ko dikhati hai
+function bankEntries(a){
+  const outE=[];const op=acctOpening(a);const dayE=[];
+  for(const e of bankMap.values())if(e.acct===a)outE.push({src:"bank",id:e.id,date:e.date,part:e.part||"",ref:e.ref||"",jama:z(num(e.jama)),nik:z(num(e.nikasi)),m:!!e.m,at:e.at||""});
+  const src=new Map(days);if(cur&&dirty)src.set(cur.date,cur);
+  for(const [d,doc] of src){const n=normalize(doc,d);
+    n.pay.forEach((r,i)=>{const v=num(r.amt);const b=String(r.bank||"");if(b.slice(0,2)===a&&v){const dep=b.endsWith("-D");
+      dayE.push({src:"day",date:d,key:"pay",i,part:dep?"Cash deposit"+(r.part?" – "+r.part:""):(r.part||"Payment"),ref:r.chq||"",jama:dep?v:0,nik:dep?0:v,m:!!r.bm,at:""});}});
+    n.rec.forEach((r,i)=>{const v=num(r.amt);const b=String(r.bank||"");if(b.slice(0,2)===a&&v){const wd=b.endsWith("-W");
+      dayE.push({src:"day",date:d,key:"rec",i,part:wd?"Cash withdrawal"+(r.part?" – "+r.part:""):(r.part||"Receipt"),ref:"",jama:wd?0:v,nik:wd?v:0,m:!!r.bm,at:""});}});}
+  // Day book ki bank wali entry agar statement mein pehle se hai (same amount, Cr/Dr, 3 din ke andar) to dobara mat gino — statement wali dikhegi, "Day book" se judi hui.
+  const AL=new Map(),claimed=new Set(),dd=(x,y)=>Math.abs((parseISO(x)-parseISO(y))/864e5);
+  const stm=outE.filter(e=>e.src==="bank");
+  for(const de of dayE.sort((x,y)=>x.date<y.date?-1:1)){let best=null;
+    for(const be of stm){if(claimed.has(be.id))continue;if(Math.abs(be.jama-de.jama)>0.009||Math.abs(be.nik-de.nik)>0.009)continue;let g=dd(be.date,de.date);if(g>3)continue;if(de.ref&&chqOf(bankMap.get(be.id))===String(de.ref).trim())g=-1;if(!best||g<best.g){best=be;best.g=g;}}
+    if(best){claimed.add(best.id);AL.set(best.id,{date:de.date,key:de.key,i:de.i});}else outE.push(de);}
+  AUTO_LINK[a]=AL;
+  return outE.filter(e=>!op.date||e.date>=op.date).sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:(x.src===y.src?(x.at<y.at?-1:x.at>y.at?1:0):(x.src==="day"?-1:1)));}
+function monthEnd(m){const d=parseISO(m+"-01");d.setMonth(d.getMonth()+1);d.setDate(0);return iso(d);}
+
+function bankRefresh(){soRefresh();if(!$("#dayView").hidden&&cur)recalc();if(!$("#bankView").hidden&&!bkEdit&&!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("#bankBody input,#bankBody select")))renderBank();}
+async function saveBankSet(){
+  if(!db)return;try{await db.doc("settings/bank").set(JSON.parse(JSON.stringify(Object.assign({},bankSet,{by:myId||null,at:new Date().toISOString()}))));$("#bText").textContent="Saved";}catch(e){$("#bText").textContent="Save nahi hua — dobara try karo.";}}
+async function putBank(e){
+  bankMap.set(e.id,e);if(!db)return;
+  try{const o={id:e.id,acct:e.acct,date:e.date,part:e.part||"",ref:e.ref||"",jama:e.jama??null,nikasi:e.nikasi??null,m:!!e.m,by:myId||null,at:e.at||new Date().toISOString()};e.at=o.at;await db.doc("bank/"+e.id).set(o);$("#bText").textContent="Saved";}
+  catch(err){$("#bText").textContent="Save nahi hua — dobara try karo.";}}
+async function setDayMatch(e,val){
+  if(e.date===curDate&&cur){cur[e.key][e.i].bm=val;touch();await flush();return;}
+  const doc=normalize(days.get(e.date),e.date);if(!doc[e.key][e.i])return;doc[e.key][e.i].bm=val;doc.by=myId||null;doc.at=new Date().toISOString();days.set(e.date,doc);
+  try{await db.doc("days/"+e.date).set(JSON.parse(JSON.stringify(doc)));$("#bText").textContent="Saved";}catch(err){$("#bText").textContent="Save nahi hua — dobara try karo.";}}
+
+function renderBank(){
+  const a=curAcct,body=$("#bankBody");$("#bMonthPick").value=bMonth;body.replaceChildren();
+  const st=bankSet[a]||(bankSet[a]={});
+  const all=bankEntries(a),op=acctOpening(a);
+  const mStart=bMonth+"-01",mEnd=monthEnd(bMonth);
+  let bf=op.amt;for(const e of all)if(e.date<mStart)bf+=e.jama-e.nik;
+  const rows=all.filter(e=>e.date>=mStart&&e.date<=mEnd);
+  let J=0,N=0;for(const e of rows){J+=e.jama;N+=e.nik;}
+  const closing=r2(bf+J-N);
+  let nowBal=op.amt;for(const e of all)nowBal+=e.jama-e.nik;nowBal=r2(nowBal);
+
+  // account switch + title
+  const sw=el("div",{class:"bk-acct",role:"group","aria-label":"Account"},
+    ...["CA","OD"].map(k=>el("button",{type:"button","aria-pressed":String(k===a),onclick:()=>{curAcct=k;LS.set("bb.acct",k);if(imp&&imp.stage!=="saving"&&imp.stage!=="busy")imp=null;renderBank();}},ACCT_NAME[k])));
+  const mName=parseISO(mStart).toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  body.append(el("div",{class:"dayhead",style:"flex-direction:row;flex-wrap:wrap;align-items:center"},el("div",{class:"daytitle",text:`${ACCT_NAME[a]} · ${mName}`}),sw));
+  if(st.no||st.bankName)body.append(el("p",{class:"hint",style:"margin:-6px 0 10px",text:`${st.bankName||"Rajasthan Gramin Bank"}${st.no?" · A/c "+st.no:""}`}));
+  body.append(importCard());
+
+  // summary
+  const k=(l,v,cls)=>el("div",{class:"kpi"+(cls?" "+cls:"")},el("div",{class:"l",text:l}),el("div",{class:"v",text:v}));
+  const sum=el("div",{class:"bk-sum"},k("Opening b/f",balTxt(r2(bf))),k("Credit",inr(r2(J))),k("Debit",inr(r2(N))),k("Closing",balTxt(closing),"hero"));
+  const sumCard=el("section",{class:"card"},sum);
+  if(a==="OD"){const L=z(num(st.limit));const used=Math.max(0,-nowBal);const avail=r2(L+nowBal);const pct=L?Math.min(100,used/L*100):0;
+    sumCard.append(el("div",{style:"margin-top:12px;display:grid;gap:6px"},
+      el("div",{class:"bk-sum"},k("O/D limit",L?inr(L):"Limit daalo ↓"),k("Use hua (aaj tak)",inr(r2(used))),k("Bacha limit",L?inr(avail):"—",avail<0?"":""),k("Use %",L?pct.toFixed(1)+"%":"—")),
+      L?el("div",{class:"odbar"+(pct>=90?" hi":""),title:pct.toFixed(1)+"% used"},el("i",{style:`width:${pct}%`})):null,
+      avail<0&&L?el("p",{class:"warn",text:"Limit se zyada use ho gaya hai."}):null));}
+  body.append(sumCard);
+
+  // add entry
+  if(canWrite){
+    const f=el("form",{class:"bk-form",autocomplete:"off"},
+      el("label",{},"Date",el("input",{type:"date",id:"bkDate",value:(curDate.startsWith(bMonth)?curDate:mStart),required:true})),
+      el("label",{class:"wide"},"Particulars",el("input",{id:"bkPart",list:"dlBank",placeholder:"e.g. NEFT – HPCL, Cash deposit, Cheque 123456",required:true})),
+      el("label",{},"Cheque / UTR",el("input",{id:"bkRef"})),
+      el("label",{},"Credit ₹",el("input",{id:"bkJ",class:"n",inputmode:"decimal"})),
+      el("label",{},"Debit ₹",el("input",{id:"bkN",class:"n",inputmode:"decimal"})),
+      el("button",{class:"btn primary",type:"submit"},"Add"));
+    f.addEventListener("submit",ev=>{ev.preventDefault();
+      const j=num($("#bkJ").value),n=num($("#bkN").value);
+      if(!(j>0)&&!(n>0)){$("#bText").textContent="Credit ya Debit mein amount daalo.";return;}
+      if(j>0&&n>0){$("#bText").textContent="Ek entry mein sirf Credit ya sirf Debit daalo.";return;}
+      const e={id:"b"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),acct:a,date:$("#bkDate").value,part:$("#bkPart").value.trim(),ref:$("#bkRef").value.trim(),jama:j||null,nikasi:n||null,m:false};
+      putBank(e);bMonth=e.date.slice(0,7);renderBank();$("#bkPart").focus();});
+    body.append(el("section",{class:"card"},el("h2",{text:"New entry"}),f,
+      el("p",{class:"hint",text:"Day book ki Receipt / Payment jisme Bank chuna hai, yahan apne aap aati hai — receipt Credit mein, payment Debit mein (cash nikala / cash jama ulta). Use dobara mat daalna."})));}
+
+  // ledger
+  const t=el("table",{class:"ledger"});
+  t.append(el("thead",{},el("tr",{},...["Date","Particulars","Cheque / UTR","Credit","Debit","Balance",""].map((h,i)=>el("th",{class:i>=3&&i<=5?"num":"",text:h})))));
+  const tb=el("tbody");let run=bf;
+  tb.append(el("tr",{class:"bf"},el("td",{text:short(mStart)}),el("td",{text:"Opening balance b/f"}),el("td"),el("td"),el("td"),el("td",{class:"out",text:balTxt(r2(bf))}),el("td")));
+  const lkm=b2dLinkMap();
+  for(const e of rows){run=r2(run+e.jama-e.nik);
+    if(e.src==="bank"&&bkEdit===e.id&&canWrite){
+      const o=bankMap.get(e.id);
+      const iD=el("input",{type:"date",id:"edDate",value:o.date}),iP=el("input",{id:"edPart",value:o.part||"",list:"dlBank"}),iR=el("input",{id:"edRef",value:o.ref||""}),
+        iC=el("input",{id:"edCr",class:"n",inputmode:"decimal",value:o.jama??""}),iDr=el("input",{id:"edDr",class:"n",inputmode:"decimal",value:o.nikasi??""});
+      const msg=el("span",{class:"warn"});
+      const saveE=()=>{const c=num(iC.value),d=num(iDr.value);
+        if(!iD.value){msg.textContent="Date daalo.";return;}
+        if(!(c>0)&&!(d>0)){msg.textContent="Credit ya Debit mein amount daalo.";return;}
+        if(c>0&&d>0){msg.textContent="Sirf Credit ya sirf Debit.";return;}
+        o.date=iD.value;o.part=iP.value.trim();o.ref=iR.value.trim();o.jama=c>0?c:null;o.nikasi=d>0?d:null;
+        bkEdit=null;putBank(o);bMonth=o.date.slice(0,7);renderBank();};
+      [iD,iP,iR,iC,iDr].forEach(x=>x.addEventListener("keydown",ev=>{if(ev.key==="Enter")saveE();if(ev.key==="Escape"){bkEdit=null;renderBank();}}));
+      tb.append(el("tr",{class:"editing"},el("td",{},iD),el("td",{},iP),el("td",{},iR),el("td",{},iC),el("td",{},iDr),el("td",{},msg),
+        el("td",{class:"acts"},el("button",{class:"btn small primary",type:"button",onclick:saveE},"Save"),el("button",{class:"btn small",type:"button",onclick:()=>{bkEdit=null;renderBank();}},"Cancel"))));
+      continue;}
+    const acts=el("td",{class:"acts"});
+    if(canWrite){
+      if(e.src==="bank"){
+        acts.append(el("button",{class:"rowedit",type:"button",title:"Edit","aria-label":"Edit entry",onclick:()=>{bkEdit=e.id;renderBank();const f=$("#edPart");if(f)f.focus();}},"✎"));
+        const holder=el("span",{class:"confirm"});acts.append(holder);
+        holder.append(el("button",{class:"rowdel",type:"button",title:"Delete","aria-label":"Delete entry",onclick:()=>{holder.replaceChildren(el("button",{class:"btn small danger",onclick:async()=>{bankMap.delete(e.id);renderBank();try{await db.doc("bank/"+e.id).delete();}catch(x){$("#bText").textContent="Delete nahi hua.";}}},"Delete"),el("button",{class:"btn small",onclick:()=>renderBank()},"No"));}},"×"));}
+      else acts.append(el("button",{class:"rowedit",type:"button",title:"Day book mein edit karo","aria-label":"Day book mein edit karo",onclick:()=>{showTab("day");loadDay(e.date);}},"✎"));}
+    const tr=el("tr",{class:e.src==="day"?"daylink":""},
+      el("td",{text:short(e.date),title:e.src==="day"?"Day book kholo":undefined,onclick:e.src==="day"?()=>{showTab("day");loadDay(e.date);}:undefined}),
+      el("td",{},e.part||"—",e.src==="day"?el("span",{class:"chip",style:"margin-left:6px",text:"Day book"}):(()=>{const L=lkm.get(a+":"+e.id);
+        return L?el("button",{class:"chip chip-ok",type:"button",title:"Day book mein dekho",onclick:()=>{showTab("day");loadDay(L.date);}},`✓ Day book: ${L.key==="rec"?"Receipt":"Payment"} ${short(L.date)}`):el("span",{class:"chip chip-no",text:"Day book mein nahi"});})()),
+      el("td",{text:e.ref}),
+      el("td",{class:"out",text:e.jama?inr(e.jama):""}),el("td",{class:"out",text:e.nik?inr(e.nik):""}),
+      el("td",{class:"out",text:balTxt(run)}),acts);
+    tb.append(tr);}
+  if(!rows.length)tb.append(el("tr",{},el("td",{colspan:7,class:"hint",text:"Is mahine koi entry nahi."})));
+  t.append(tb);
+  t.append(el("tfoot",{},el("tr",{class:"cf"},el("td",{text:short(mEnd)}),el("td",{text:"Closing balance"}),el("td"),el("td",{class:"out",text:inr(r2(J))}),el("td",{class:"out",text:inr(r2(N))}),el("td",{class:"out",text:balTxt(closing)}),el("td"))));
+  body.append(el("section",{class:"card"},el("h2",{text:"Bank book"}),el("div",{class:"tscroll"},t),
+    el("p",{class:"hint",text:"✎ dabakar entry badlo. 'Day book' wali entry day book mein badalti hai. Balance 'Cr' = bank mein paisa; 'Dr' = O/D use hua."})));
+
+  // BRS
+  let uJ=0,uN=0;for(const e of all)if(e.date<=mEnd&&!e.m){uJ+=e.jama;uN+=e.nik;}
+  const sb=(bankSet.stmt[a]||{})[bMonth]||{};
+  const stAmt=sb.amt==null?null:z(num(sb.amt))*(sb.dr?-1:1);
+  const expected=r2(closing-uJ+uN);
+  const diff=stAmt==null?null:r2(stAmt-expected);
+  const sIn=el("input",{id:"brsAmt",class:"n",inputmode:"decimal",value:sb.amt==null?"":sb.amt,placeholder:"Statement ka balance",disabled:!canWrite||undefined});
+  const sDr=el("select",{id:"brsDr",disabled:!canWrite||undefined},el("option",{value:"",text:"Cr"}),el("option",{value:"1",text:"Dr"}));sDr.value=sb.dr?"1":"";
+  const brs=el("table",{class:"summary brs"},el("tbody",{},
+    el("tr",{},el("td",{class:"lbl",text:`Book balance (${short(mEnd)})`}),el("td",{class:"out",text:balTxt(closing)})),
+    el("tr",{},el("td",{class:"lbl",text:"Less: Credit jo bank mein abhi nahi dikha"}),el("td",{class:"out",text:inr(r2(uJ))})),
+    el("tr",{},el("td",{class:"lbl",text:"Add: Debit jo bank mein abhi nahi dikha"}),el("td",{class:"out",text:inr(r2(uN))})),
+    el("tr",{class:"total"},el("td",{text:"Bank statement mein hona chahiye"}),el("td",{class:"out",text:balTxt(expected)})),
+    el("tr",{},el("td",{class:"lbl",text:"Bank statement ka asli balance"}),el("td",{},el("div",{style:"display:flex;gap:6px;justify-content:flex-end"},sIn,sDr))),
+    el("tr",{class:"cih"},el("td",{text:"Fark (difference)"}),el("td",{class:"out "+(diff===0?"diff0":diff==null?"":"diffx"),text:diff==null?"—":(diff===0?"₹0.00 ✓ Milan ho gaya":balTxt(diff))}))));
+  const saveSt=()=>{const v=num(sIn.value);bankSet.stmt[a]=bankSet.stmt[a]||{};bankSet.stmt[a][bMonth]=v==null?{}:{amt:v,dr:sDr.value==="1"};saveBankSet();setTimeout(renderBank,0);};
+  sIn.addEventListener("change",saveSt);sDr.addEventListener("change",saveSt);
+  body.append(el("section",{class:"card"},el("h2",{text:"Bank statement se milan (BRS)"}),brs));
+
+  // account details
+  const fld=(lab,id,val,o={})=>el("label",{},lab,el("input",{id,value:val??"",class:o.n?"n":"",inputmode:o.n?"decimal":undefined,type:o.type||"text",disabled:!canWrite||undefined}));
+  const drSel=el("select",{id:"setDr",disabled:!canWrite||undefined},el("option",{value:"",text:"Cr (paisa hai)"}),el("option",{value:"1",text:"Dr (O/D use)"}));drSel.value=st.openDr?"1":"";
+  const set=el("div",{class:"bk-set"},
+    fld("Bank","setBank",st.bankName||"Rajasthan Gramin Bank"),fld("A/c number","setNo",st.no),
+    fld("Opening balance ₹","setOpen",st.open,{n:1}),el("label",{},"Cr / Dr",drSel),
+    fld("Opening kis date se","setOpenDate",st.openDate,{type:"date"}),
+    a==="OD"?fld("O/D limit ₹","setLimit",st.limit,{n:1}):null);
+  const det=el("details",{class:"card"},el("summary",{text:"Account details · opening balance"+(a==="OD"?" · O/D limit":"")}),el("div",{style:"margin-top:10px;display:grid;gap:10px"},set,
+    canWrite?el("button",{class:"btn primary",style:"justify-self:start",type:"button",onclick:()=>{
+      st.bankName=$("#setBank").value.trim();st.no=$("#setNo").value.trim();st.open=num($("#setOpen").value);st.openDr=drSel.value==="1";st.openDate=$("#setOpenDate").value||"";
+      if(a==="OD")st.limit=num($("#setLimit").value);bankSet[a]=st;saveBankSet();renderBank();}},"Save details"):null,
+    el("p",{class:"hint",text:"Opening balance: jis date se hisaab shuru karna hai, us din subah bank mein kitna balance tha. O/D mein use hua amount 'Dr' chuno."})));
+  if(!st.openDate&&st.open==null)det.open=true;
+  body.append(det);
+  $("#bText").textContent="";
+}
+
+
+// ---------- bank statement import (Excel / CSV / JSON / PDF) ----------
+let imp=null;   // {stage,name,kind,aoa,hdr,map,rows,msg,busy}
+const CDN={xlsx:"https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+  pdf:"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+  pdfw:"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"};
+const loaded={};
+function loadScript(u){return loaded[u]||(loaded[u]=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src=u;sc.onload=res;sc.onerror=()=>{delete loaded[u];rej(new Error("Library load nahi hui — internet check karo."));};document.head.append(sc);}));}
+const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+function parseDate(v){
+  if(v==null||v==="")return null;
+  if(v instanceof Date&&!isNaN(v))return iso(new Date(v.getTime()+12*36e5));
+  if(typeof v==="number"&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*864e5));return iso(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));}
+  const t=String(v).trim();let m;
+  if((m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return ymd(+m[1],+m[2],+m[3]);
+  if((m=t.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})\b/))){let y=+m[3];if(y<100)y+=2000;return ymd(y,+m[2],+m[1]);}
+  if((m=t.match(/^(\d{1,2})[\/\-. ]?([A-Za-z]{3,4})[A-Za-z]*[\/\-. ,]*(\d{2,4})\b/))){const mo=MON[m[2].toLowerCase()];if(!mo)return null;let y=+m[3];if(y<100)y+=2000;return ymd(y,mo,+m[1]);}
+  return null;}
+function ymd(y,m,d){if(!(y>1990&&y<2100&&m>=1&&m<=12&&d>=1&&d<=31))return null;return`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
+// amount → {v:number|null, dr:bool|null}
+function parseAmt(v){
+  if(v==null||v==="")return{v:null,dr:null};
+  if(typeof v==="number")return{v:Math.abs(v),dr:v<0?true:null,neg:v<0};
+  let t=String(v).replace(/[₹,\s]/g,"").replace(/INR|Rs\.?/ig,"");let dr=null;
+  if(/dr\.?$/i.test(t)){dr=true;t=t.replace(/dr\.?$/i,"");}else if(/cr\.?$/i.test(t)){dr=false;t=t.replace(/cr\.?$/i,"");}
+  let neg=false;if(/^\(.*\)$/.test(t)){neg=true;t=t.slice(1,-1);}if(t.startsWith("-")){neg=true;t=t.slice(1);}
+  const x=parseFloat(t);if(!isFinite(x)||!/^\d*\.?\d+$/.test(t))return{v:null,dr:null};
+  return{v:x,dr:dr??(neg?true:null),neg};}
+
+const FIELDS=[["date","Date"],["part","Particulars / Narration"],["ref","Cheque / UTR / Ref"],["dr","Withdrawal / Debit"],["cr","Deposit / Credit"],["amt","Amount (ek hi column)"],["type","Dr/Cr column"],["bal","Balance"]];
+function guessMap(hdr){
+  const H=hdr.map(h=>String(h||"").toLowerCase().replace(/\s+/g," ").trim());const used=new Set();const map={};
+  const pick=(f,tests,avoid)=>{for(const re of tests){const i=H.findIndex((h,i)=>!used.has(i)&&re.test(h)&&!(avoid&&avoid.test(h)));if(i>=0){map[f]=i;used.add(i);return;}}map[f]=-1;};
+  pick("date",[/^(txn|tran|transaction|post|posting)?\.? ?date/,/date/],/value/);if(map.date<0)pick("date",[/date/]);
+  pick("dr",[/withdraw/,/debit/,/^dr\.?( amount)?$/,/paid out/]);
+  pick("cr",[/deposit/,/credit/,/^cr\.?( amount)?$/,/paid in/]);
+  pick("bal",[/balance/,/^bal/]);
+  pick("type",[/dr ?\/ ?cr/,/cr ?\/ ?dr/,/^type$/,/^d\/c$/]);
+  pick("amt",[/^amount/,/amt/]);
+  pick("ref",[/che?q/,/ref/,/utr/,/instrument/]);
+  pick("part",[/narration/,/description/,/particular/,/remark/,/details/]);
+  return map;}
+function findHeader(aoa){
+  let best=-1,score=0;
+  for(let r=0;r<Math.min(aoa.length,60);r++){const row=(aoa[r]||[]).map(c=>String(c||"").toLowerCase());
+    let s=0;if(row.some(c=>/date/.test(c)))s++;if(row.some(c=>/narration|description|particular|remark|details/.test(c)))s++;
+    if(row.some(c=>/withdraw|debit|^dr/.test(c)))s++;if(row.some(c=>/deposit|credit|^cr/.test(c)))s++;if(row.some(c=>/balance/.test(c)))s++;if(row.some(c=>/amount/.test(c)))s++;
+    if(s>score){score=s;best=r;}}
+  return score>=2?best:-1;}
+function rowsFromTable(aoa,hi,map){
+  const out=[];
+  for(let r=hi+1;r<aoa.length;r++){const row=aoa[r]||[];const g=k=>map[k]>=0?row[map[k]]:"";
+    const date=parseDate(g("date"));if(!date)continue;
+    let dr=parseAmt(g("dr")).v,cr=parseAmt(g("cr")).v;
+    if(map.dr<0&&map.cr<0&&map.amt>=0){const a=parseAmt(g("amt"));const ty=String(g("type")||"").trim().toUpperCase();
+      const isDr=ty?ty.startsWith("D"):(a.dr===true);if(a.v){if(isDr)dr=a.v;else cr=a.v;}}
+    if(!(dr>0)&&!(cr>0))continue;
+    const b=parseAmt(g("bal"));
+    out.push({date,part:String(g("part")||"").replace(/\s+/g," ").trim(),ref:String(g("ref")||"").trim(),dr:dr>0?dr:null,cr:cr>0?cr:null,bal:b.v,balDr:b.dr});}
+  return out;}
+
+async function readTableFile(file){
+  const name=file.name.toLowerCase();
+  if(name.endsWith(".json")){
+    let data=JSON.parse(await file.text());
+    if(!Array.isArray(data)){const k=Object.keys(data).find(k=>Array.isArray(data[k]));data=k?data[k]:[];}
+    if(data.length&&Array.isArray(data[0]))return data;
+    const keys=[];for(const o of data)for(const k of Object.keys(o||{}))if(!keys.includes(k))keys.push(k);
+    return[keys,...data.map(o=>keys.map(k=>o[k]))];}
+  await loadScript(CDN.xlsx);
+  const wb=(name.endsWith(".csv")||name.endsWith(".txt"))?XLSX.read(await file.text(),{type:"string",raw:true}):XLSX.read(await file.arrayBuffer(),{type:"array"});
+  let best=null;for(const sn of wb.SheetNames){const a=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:""});if(!best||a.length>best.length)best=a;}
+  return best||[];}
+
+async function pdfLines(file){
+  await loadScript(CDN.pdfw);await loadScript(CDN.pdf);
+  const lib=window.pdfjsLib;lib.GlobalWorkerOptions.workerSrc=CDN.pdfw;
+  let doc;try{doc=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;}
+  catch(e){if(e&&e.name==="PasswordException")throw new Error("PDF par password hai. Password hata kar (ya bank se Excel statement lekar) dobara try karo.");throw e;}
+  const pages=[];
+  for(let p=1;p<=doc.numPages;p++){const tc=await (await doc.getPage(p)).getTextContent();
+    const rows=[];for(const it of tc.items){if(!it.str||!it.str.trim())continue;const y=it.transform[5],x=it.transform[4];
+      let r=rows.find(r=>Math.abs(r.y-y)<3);if(!r){r={y,items:[]};rows.push(r);}r.items.push({x,s:it.str,w:it.width||0});}
+    rows.sort((a,b)=>b.y-a.y);
+    pages.push(rows.map(r=>{r.items.sort((a,b)=>a.x-b.x);let s="",end=null;for(const it of r.items){if(end!=null&&it.x-end>4)s+="  ";else if(end!=null)s+=" ";s+=it.s.trim();end=it.x+it.w;}return s;}).join("\n"));}
+  return pages;}
+// simple fallback: date at start, last number = balance, number before = amount, direction from balance change
+function heuristicRows(text){
+  const out=[];let prevBal=null;
+  for(const line of text.split("\n")){const d=parseDate(line.trim().split(/\s{2,}|\s(?=\d{1,2}[\/\-])/)[0])||parseDate(line.trim());if(!d)continue;
+    const nums=[...line.matchAll(/(\d{1,3}(?:,\d{2,3})+|\d+)\.\d{2}\s*(Cr|Dr)?/gi)];if(nums.length<2){continue;}
+    const bal=parseAmt(nums[nums.length-1][0]),amt=parseAmt(nums[nums.length-2][0]);if(!amt.v)continue;
+    let isDr=null;const balSigned=bal.v==null?null:(bal.dr?-bal.v:bal.v);
+    if(prevBal!=null&&balSigned!=null){const dlt=r2(balSigned-prevBal);if(Math.abs(Math.abs(dlt)-amt.v)<0.02)isDr=dlt<0;}
+    if(isDr==null){const u=line.toUpperCase();if(/\bDR\b|\bTO\b|WDL|WITHDRAW|DEBIT/.test(u))isDr=true;else if(/\bCR\b|\bBY\b|DEP|CREDIT/.test(u))isDr=false;}
+    prevBal=balSigned;
+    const firstNum=line.indexOf(nums[nums.length-2][0]);let part=line.slice(0,firstNum).replace(/^\s*\S+/,"").replace(/^\s*\d{1,2}[\/\-.][\dA-Za-z]{1,3}[\/\-.]\d{2,4}/,"").replace(/\s+/g," ").trim();
+    out.push({date:d,part,ref:"",dr:isDr===false?null:amt.v,cr:isDr===false?amt.v:null,bal:bal.v,balDr:bal.dr,unsure:isDr==null});}
+  return out;}
+async function aiRows(pages,setMsg){
+  const sample=await claude.use("sample");if(!sample)return null;
+  let maxB=60000;try{const l=await sample.limits();if(l&&l.maxPromptBytes)maxB=Math.max(8000,l.maxPromptBytes-6000);}catch(e){}
+  const chunks=[];let cur2="";for(const p of pages){if(cur2&&(cur2.length+p.length)*1.2>maxB){chunks.push(cur2);cur2="";}cur2+=p+"\n\n";}if(cur2)chunks.push(cur2);
+  const all=[];
+  for(let i=0;i<chunks.length;i++){setMsg(`Claude statement padh raha hai… (${i+1}/${chunks.length})`);
+    const prompt=`Below is text extracted from an Indian bank account statement (e.g. Rajasthan Gramin Bank). Extract EVERY transaction row, in order.
+Return only JSON: {"rows":[{"date":"YYYY-MM-DD","part":"narration text","ref":"cheque/UTR/ref no or empty","dr":number or null,"cr":number or null,"bal":number or null,"balDr":true or false}]}
+Rules: dr = withdrawal/debit amount, cr = deposit/credit amount (exactly one of them per row). Dates in Indian statements are day-first (DD/MM/YYYY). bal = running balance after the row; balDr = true if the balance is marked Dr/negative. Skip opening balance, closing balance, page headers and totals. Never invent or alter numbers; if a value is unreadable use null.
+
+STATEMENT TEXT:
+${chunks[i]}`;
+    const res=await sample.json(prompt,{modelTier:"default"});
+    const rows=Array.isArray(res)?res:(res&&Array.isArray(res.rows)?res.rows:[]);
+    for(const r of rows){const d=parseDate(r.date);const dr=num(r.dr),cr=num(r.cr);if(!d||(!(dr>0)&&!(cr>0)))continue;
+      all.push({date:d,part:String(r.part||"").trim(),ref:String(r.ref||"").trim(),dr:dr>0?dr:null,cr:cr>0&&!(dr>0)?cr:null,bal:num(r.bal),balDr:r.balDr===true});}}
+  return all;}
+
+// plan: match against book entries, flag duplicates
+function planRows(rows,a){
+  const book=bankEntries(a);const claimed=new Set();
+  const dd=(x,y)=>Math.abs((parseISO(x)-parseISO(y))/864e5);
+  return rows.map(r=>{const amt=r.cr||r.dr,isJ=!!r.cr;
+    const same=e=>(isJ?Math.abs(e.jama-amt)<0.01&&!e.nik:Math.abs(e.nik-amt)<0.01&&!e.jama);
+    const dup=book.find(e=>e.m&&same(e)&&e.date===r.date&&!claimed.has(e));
+    if(dup){claimed.add(dup);return Object.assign({},r,{status:"dup",on:false});}
+    let best=null;for(const e of book){if(e.m||claimed.has(e)||!same(e))continue;const g=dd(e.date,r.date);if(g<=5&&(!best||g<dd(best.date,r.date)))best=e;}
+    if(best){claimed.add(best);return Object.assign({},r,{status:"match",target:best,on:true});}
+    return Object.assign({},r,{status:"new",on:!r.unsure});});}
+
+async function onImportFile(file){
+  const a=curAcct;imp={stage:"busy",name:file.name,msg:"File padh rahe hain…",acct:a};renderBank();
+  const setMsg=m=>{imp.msg=m;const e=$("#impMsg");if(e)e.textContent=m;};
+  try{
+    const n=file.name.toLowerCase();
+    if(n.endsWith(".pdf")){
+      const pages=await pdfLines(file);const text=pages.join("\n");
+      if(text.replace(/\s/g,"").length<40)throw new Error("Is PDF mein text nahi mila (scan ki hui photo lagti hai). Bank se Excel/CSV statement lo, ya text wali PDF.");
+      let rows=null,src="";
+      try{rows=await aiRows(pages,setMsg);src="Claude ne PDF padhi";}catch(e){rows=null;}
+      if(!rows||!rows.length){rows=heuristicRows(text);src="Simple PDF reader";}
+      if(!rows.length)throw new Error("PDF mein transactions pehchaan nahi aaye. Bank se Excel/CSV statement lekar try karo.");
+      imp={stage:"preview",name:file.name,kind:"pdf",src,acct:a,rows:planRows(rows,a)};}
+    else{
+      const aoa=await readTableFile(file);const hi=findHeader(aoa);
+      if(hi<0)throw new Error("Statement mein heading wali line (Date, Narration, Debit, Credit, Balance) nahi mili.");
+      const hdr=aoa[hi].map((h,i)=>String(h||"").trim()||`Column ${i+1}`);const map=guessMap(hdr);
+      imp={stage:"preview",name:file.name,kind:"table",acct:a,aoa,hi,hdr,map,rows:planRows(rowsFromTable(aoa,hi,map),a)};}
+  }catch(e){imp={stage:"error",name:file.name,acct:a,msg:String(e&&e.message||e)};}
+  renderBank();}
+
+async function doImport(){
+  const a=imp.acct,sel=imp.rows.filter(r=>r.on);if(!sel.length)return;
+  imp.stage="saving";renderBank();let i=0;
+  for(const r of sel){i++;const m=$("#impMsg");if(m)m.textContent=`Save ho raha hai… ${i}/${sel.length}`;
+    if(r.status==="match"&&r.target){const t=r.target;if(t.src==="bank"){const o=bankMap.get(t.id);if(o){o.m=true;await putBank(o);}}else await setDayMatch(t,true);}
+    else{const e={id:"s"+Date.now().toString(36)+Math.random().toString(36).slice(2,7),acct:a,date:r.date,part:r.part||"Bank statement",ref:r.ref||"",jama:r.cr||null,nikasi:r.dr||null,m:true};await putBank(e);}}
+  // statement closing balance per month → BRS
+  const lastBal={};for(const r of imp.rows)if(r.bal!=null)lastBal[r.date.slice(0,7)]={amt:r.bal,dr:r.balDr!=null?r.balDr:(a==="OD")};
+  if(Object.keys(lastBal).length){bankSet.stmt[a]=bankSet.stmt[a]||{};Object.assign(bankSet.stmt[a],lastBal);await saveBankSet();}
+  const months=[...new Set(sel.map(r=>r.date.slice(0,7)))].sort();
+  imp={stage:"done",acct:a,msg:`${sel.length} entries import ho gayi.`};if(months.length)bMonth=months[months.length-1];renderBank();}
+
+// ---------- Bank statement -> Day book (Receipts / Payments) ----------
+const B2D_CASH=/\bcash\b|csh|\bself\b|\batm\b|withdraw/i, B2D_SKIP=/charge|chrg|chg\b|interest|\bint\b|int\.|gst|sms|\bfee|commission|min bal|tfr to (ca|od)|transfer to (ca|od)/i;
+let B2D=null;
+function b2dLinkMap(){const m=new Map();for(const a of ["CA","OD"]){bankEntries(a);for(const [id,L] of AUTO_LINK[a])m.set(a+":"+id,L);}const src=new Map(days);if(cur&&dirty)src.set(cur.date,cur);
+  for(const [d,doc] of src){const n=normalize(doc,d);for(const k of ["rec","pay"])for(const r of n[k])if(r.stm)m.set(r.stm,{date:d,key:k});}return m;}
+function b2dLinked(){const s=new Set(b2dLinkMap().keys());const src=new Map(days);if(cur&&dirty)src.set(cur.date,cur);
+  for(const [d,doc] of src){const n=normalize(doc,d);for(const k of ["rec","pay"])for(const r of n[k])if(r.stm)s.add(r.stm);}return s;}
+function b2dOpen(){
+  const a=curAcct,linked=b2dLinked(),mS=bMonth+"-01",mE=monthEnd(bMonth);
+  const rows=[...bankMap.values()].filter(e=>e.acct===a&&e.date>=mS&&e.date<=mE&&!linked.has(a+":"+e.id)&&(num(e.jama)||num(e.nikasi)))
+    .sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:0).map(e=>{const cr=z(num(e.jama))>0,amt=cr?z(num(e.jama)):z(num(e.nikasi));const cash=B2D_CASH.test(e.part||"");
+      const to=cr?(cash?"pay":"rec"):(cash?"rec":"pay");return{e,amt,cr,cash,to,on:!B2D_SKIP.test(e.part||"")};});
+  B2D={acct:a,rows,msg:"",busy:false};b2dRender();}
+function b2dClose(){const o=$("#b2dOv");if(o)o.remove();B2D=null;document.body.style.overflow="";}
+async function b2dSend(){
+  const sel=B2D.rows.filter(r=>r.on);if(!sel.length||!db)return;B2D.busy=true;B2D.msg="Day book mein bhej raha hoon…";b2dRender();await flush();
+  const byDate=new Map();for(const r of sel){if(!byDate.has(r.e.date))byDate.set(r.e.date,[]);byDate.get(r.e.date).push(r);}
+  let done=0;
+  try{for(const [d,list] of byDate){const doc=normalize(days.get(d),d);
+      for(const r of list){const part=String(r.e.part||"Bank").replace(/\s+/g," ").trim().slice(0,60)+` (${B2D.acct==="OD"?"O/D":"CA"})`;
+        doc[r.to].push(Object.assign({part,amt:r.amt,bank:"",stm:B2D.acct+":"+r.e.id},r.to==="pay"&&chqOf(r.e)?{chq:chqOf(r.e)}:{}));}
+      const body=JSON.parse(JSON.stringify(doc));for(const x of ["lube","rec","pay","crH","crM"])body[x]=body[x].filter(q=>Object.values(q).some(v=>v!=null&&v!==""));
+      body.by=myId||null;body.at=new Date().toISOString();await db.doc("days/"+d).set(body);days.set(d,body);done+=list.length;}
+    if(byDate.has(curDate)&&!dirty)cur=normalize(days.get(curDate),curDate);
+    B2D.rows=B2D.rows.filter(r=>!r.on);B2D.msg=`${done} entry day book mein bhej di.`;
+  }catch(e){B2D.msg=`${done} entry bheji, phir ruk gaya — dobara try karo.`;}
+  B2D.busy=false;b2dRender();bankRefresh();}
+function b2dRender(){
+  if(!B2D)return;let ov=$("#b2dOv");
+  if(!ov){ov=el("div",{id:"b2dOv",class:"ri-ov",role:"dialog","aria-modal":"true","aria-label":"Day book mein bhejo"});document.body.append(ov);document.body.style.overflow="hidden";ov.addEventListener("click",e=>{if(e.target===ov&&!B2D.busy)b2dClose();});}
+  const box=el("div",{class:"ri-box"});ov.replaceChildren(box);
+  const mName=parseISO(bMonth+"-01").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  box.append(el("div",{class:"ri-head"},el("div",{class:"daytitle",style:"margin:0",text:`Day book mein bhejo · ${ACCT_NAME[B2D.acct]} · ${mName}`}),el("button",{class:"btn small",type:"button",disabled:B2D.busy||undefined,onclick:b2dClose},"Close")));
+  if(!B2D.rows.length){box.append(el("p",{class:"hint",text:B2D.msg||"Is mahine statement ki koi entry baaki nahi — sab day book mein hain ya statement import nahi hua."}));return;}
+  box.append(el("p",{class:"hint",style:"margin:0 0 8px",text:"Statement ki wo entries jo day book mein nahi hain. Credit → Receipt, Debit → Payment. Cash jama → Payment, cash nikasi → Receipt (cash galle se bank / bank se galle). Bank charges, interest, CA↔O/D transfer pehle se tick nahi hain."}));
+  const t=el("table",{class:"ri-t"});
+  t.append(el("thead",{},el("tr",{},el("th",{},(()=>{const a=el("input",{type:"checkbox","aria-label":"Sab chuno"});a.checked=B2D.rows.every(r=>r.on);a.onchange=()=>{B2D.rows.forEach(r=>r.on=a.checked);b2dRender();};return a;})()),
+    ...["Date","Narration","Credit","Debit","Day book mein"].map((h,i)=>el("th",{class:i===2||i===3?"num":"",text:h})))));
+  const tb=el("tbody");
+  for(const r of B2D.rows){const cb=el("input",{type:"checkbox","aria-label":"Bhejo "+r.e.date});cb.checked=r.on;cb.onchange=()=>{r.on=cb.checked;b2dRender();};
+    const s=el("select",{},el("option",{value:"rec",text:"Receipt"}),el("option",{value:"pay",text:"Payment"}));s.value=r.to;s.onchange=()=>{r.to=s.value;};
+    tb.append(el("tr",{class:r.on?"":"ri-off"},el("td",{},cb),el("td",{style:"white-space:nowrap",text:short(r.e.date)}),el("td",{text:(r.e.part||"")+(r.cash?" · cash":"")}),
+      el("td",{class:"out",text:r.cr?ltr(r.amt):""}),el("td",{class:"out",text:r.cr?"":ltr(r.amt)}),el("td",{},s)));}
+  t.append(tb);const n=B2D.rows.filter(r=>r.on).length;
+  box.append(el("div",{class:"tscroll"},t),el("p",{class:B2D.msg&&/ruk/.test(B2D.msg)?"warn":"hint",text:B2D.msg||""}),
+    el("div",{class:"ri-foot"},el("button",{class:"btn primary",type:"button",disabled:B2D.busy||!n||!canWrite||undefined,onclick:b2dSend},`Day book mein bhejo (${n})`)));}
+
+function importCard(){
+  const box=el("section",{class:"card imp"});
+  if(!imp){
+    const fi=el("input",{type:"file",id:"impFile",accept:".xlsx,.xls,.csv,.json,.pdf",hidden:true});
+    fi.addEventListener("change",()=>{if(fi.files[0])onImportFile(fi.files[0]);});
+    box.append(el("div",{class:"imp-row"},el("div",{},el("h2",{text:"Bank statement import"}),el("p",{class:"hint",style:"margin:0",text:`${ACCT_NAME[curAcct]} ka statement chuno — Excel, CSV, JSON ya PDF.`})),
+      el("div",{class:"titlebtns"},canWrite?el("button",{class:"btn",type:"button",title:"Statement ki entries day book ke Receipts / Payments mein bhejo",onclick:b2dOpen},"Day book mein bhejo"):null,canWrite?el("button",{class:"btn primary",type:"button",onclick:()=>fi.click()},"Import"):null),fi));
+    return box;}
+  const close=el("button",{class:"btn small",type:"button",onclick:()=>{imp=null;renderBank();}},imp.stage==="done"?"Theek hai":"Cancel");
+  box.append(el("div",{class:"imp-row"},el("h2",{text:`Statement import · ${ACCT_NAME[imp.acct]}`}),close));
+  if(imp.name)box.append(el("p",{class:"hint",style:"margin:0 0 8px",text:"File: "+imp.name+(imp.src?" · "+imp.src:"")}));
+  if(imp.stage==="busy"||imp.stage==="saving"){box.append(el("p",{id:"impMsg",text:imp.msg||"…"}));return box;}
+  if(imp.stage==="error"){box.append(el("p",{class:"warn",text:imp.msg}));return box;}
+  if(imp.stage==="done"){box.append(el("p",{class:"diff0",text:imp.msg+" Statement wali entries match ho gayi hain."}));return box;}
+  // mapping for tables
+  if(imp.kind==="table"){
+    const mapBox=el("div",{class:"imp-map"});
+    for(const[f,lab]of FIELDS){const s=el("select",{"aria-label":lab},el("option",{value:"-1",text:"—"}),...imp.hdr.map((h,i)=>el("option",{value:String(i),text:h})));s.value=String(imp.map[f]);
+      s.addEventListener("change",()=>{imp.map[f]=+s.value;imp.rows=planRows(rowsFromTable(imp.aoa,imp.hi,imp.map),imp.acct);setTimeout(renderBank,0);});
+      mapBox.append(el("label",{},lab,s));}
+    box.append(el("details",{},el("summary",{class:"hint",text:"Column milaan (galat lage to yahan badlo)"}),mapBox));}
+  const R=imp.rows;
+  const cnt={match:0,new:0,dup:0};let J=0,N=0;for(const r of R){cnt[r.status]++;if(r.on){J+=r.cr||0;N+=r.dr||0;}}
+  box.append(el("p",{style:"margin:6px 0"},`${R.length} transactions mile · `,el("b",{text:`${cnt.match} book se match`}),` · ${cnt.new} new · ${cnt.dup} pehle se imported`));
+  const t=el("table",{class:"ledger imp-t"});
+  t.append(el("thead",{},el("tr",{},...["","Date","Particulars","Ref","Credit","Debit","Balance","Kya hoga"].map((h,i)=>el("th",{class:i>=4&&i<=6?"num":"",text:h})))));
+  const tb=el("tbody");
+  R.forEach((r,i)=>{const cb=el("input",{type:"checkbox","aria-label":"Import"});cb.checked=r.on;cb.addEventListener("change",()=>{r.on=cb.checked;setTimeout(renderBank,0);});
+    const st=r.status==="match"?el("span",{class:"chip",text:"Book se milan ("+short(r.target.date)+")"}):r.status==="dup"?el("span",{class:"chip",style:"background:var(--field);color:var(--muted)",text:"Pehle se hai"}):el("span",{class:"chip",style:"background:var(--cash-soft);color:var(--cash)",text:"New entry"});
+    const flip=r.unsure?el("button",{class:"btn small",type:"button",title:"Credit/Debit badlo",onclick:()=>{const v=r.dr||r.cr;if(r.dr){r.cr=v;r.dr=null;}else{r.dr=v;r.cr=null;}r.unsure=false;r.on=true;const re=planRows([r],imp.acct)[0];Object.assign(r,re,{on:true});setTimeout(renderBank,0);}},"⇄"):null;
+    tb.append(el("tr",{},el("td",{},cb),el("td",{text:short(r.date)}),el("td",{text:r.part||"—"}),el("td",{text:r.ref||""}),
+      el("td",{class:"out",text:r.cr?inr(r.cr):""}),el("td",{class:"out",text:r.dr?inr(r.dr):""}),
+      el("td",{class:"out",text:r.bal!=null?inr(r.bal)+(r.balDr?" Dr":""):""}),el("td",{},st,r.unsure?el("span",{class:"warn",style:"margin-left:6px",text:"Credit/Debit check karo"}):null,flip)));});
+  t.append(tb);
+  box.append(el("div",{class:"tscroll"},t));
+  const sel=R.filter(r=>r.on).length;
+  box.append(el("div",{class:"imp-row",style:"margin-top:10px"},el("span",{class:"hint",text:`Chuni hui: ${sel} · Credit ${inr(r2(J))} · Debit ${inr(r2(N))}`}),
+    canWrite?el("button",{class:"btn primary",type:"button",disabled:!sel||undefined,onclick:doImport},`${sel} entries import karo`):null));
+  box.append(el("p",{class:"hint",text:"'Book se milan' = jo entry pehle se bank book / day book mein hai, woh dobara nahi judegi, sirf match maani jayegi. 'New entry' = bank book mein judegi. Statement ka aakhri balance BRS mein bhar diya jayega."}));
+  return box;}
+
+
+// ---------- export one day to Excel (formula-driven, same order as the day book) ----------
+async function exportDay(){
+  const btn=$("#expBtn");const setB=t=>{if(btn)btn.textContent=t;};
+  if(!downloads){status("err","Is view mein download nahi ho sakta.");return;}
+  try{
+    setB("Ban raha hai…");await flush();await loadScript(CDN.xlsx);
+    const doc=normalize(cur,cur.date),c=calcFor(doc);
+    const FMT="#,##,##0.00",R=[];
+    const N=v=>(v==null||v==="")?null:{t:"n",v:+v,z:FMT};
+    const F=(f,v)=>({t:"n",f,v:+(v||0),z:FMT});
+    const add=(...cells)=>{R.push(cells);return R.length;};
+    const next=()=>R.length+1;
+    const d=parseISO(doc.date);
+    add("BIHANI BROTHERS – DAY BOOK");
+    add("Prakash Chand · Mobile 9460301561");
+    add("Date",d.toLocaleDateString("en-IN",{day:"2-digit",month:"2-digit",year:"numeric"}),d.toLocaleDateString("en-IN",{weekday:"long"}));
+    add();
+    const meter=(k,label,n)=>{
+      add(`${label} METER READING`);add("Nozzle","Opening","Closing","Sale (Ltr)");
+      const s=next();
+      for(let i=0;i<n;i++){const r=next();const row=c[k].rows[i];add(`${label} ${i+1}`,N(row.open),N(row.close),F(`IF(OR(B${r}="",C${r}=""),0,C${r}-B${r})`,row.sale));}
+      const e=R.length,t=next();add("Less: Testing","",N(doc[k].test),null);
+      const tot=add(`Total ${label} sale (Ltr)`,"","",F(`SUM(D${s}:D${e})-N(C${t})`,c[k].total));add();return tot;};
+    const totH=meter("hsd","HSD",HSD_N),totM=meter("ms","MS",MS_N);
+    add("RATES");const rH=add("HSD rate (₹/Ltr)","","",N(c.rateH)),rM=add("MS rate (₹/Ltr)","","",N(c.rateM));add();
+    const credit=(key,label,rateRow,rate)=>{
+      add(`CREDIT SALE – ${label}`);add("Party","Invoice no.","Qty (Ltr)","Amount (₹)");
+      const s=next();const list=doc[key].length?doc[key]:[{}];
+      for(const r of list){const rr=next();const q=num(r.qty);add(r.party||"",r.inv||"",N(q),F(`N(C${rr})*$D$${rateRow}`,r2(z(q)*rate)));}
+      const e=R.length;const tot=add("Total","",F(`SUM(C${s}:C${e})`,c[key==="crH"?"crHqty":"crMqty"]),F(`SUM(D${s}:D${e})`,c[key==="crH"?"crHamt":"crMamt"]));add();return tot;};
+    const tcH=credit("crH","HSD",rH,c.rateH),tcM=credit("crM","MS",rM,c.rateM);
+    add("CASH SALE");add("Item","","Qty (Ltr)","Amount (₹)");
+    let r=next();const cH=add("HSD","",F(`D${totH}-C${tcH}`,c.cashHqty),F(`C${r}*D${rH}`,c.cashHamt));
+    r=next();const cM=add("MS","",F(`D${totM}-C${tcM}`,c.cashMqty),F(`C${r}*D${rM}`,c.cashMamt));
+    const cT=add("Total cash sale (fuel)","","",F(`D${cH}+D${cM}`,r2(c.cashHamt+c.cashMamt)));add();
+    const list=(title,key,cols,amtF,totV)=>{
+      add(title);add(...cols);const s=next();const rows=doc[key].length?doc[key]:[{}];
+      for(const x of rows)add(...amtF(x));
+      const e=R.length;const t=add("Total","","",F(`SUM(D${s}:D${e})`,totV));add();return t;};
+    const bankName=v=>v==="CA"?"Current A/c":v==="OD"?"O/D A/c":"";
+    const tL=list("CASH SALE – LUBE","lube",["Item","","Qty","Amount (₹)"],x=>[x.item||"","",N(num(x.qty)),N(num(x.amt))],c.lube);
+    const tR=list("BANK & OTHER RECEIPTS","rec",["Particulars","Bank","","Amount (₹)"],x=>[x.part||"",bankLbl("rec",x.bank),"",N(num(x.amt))],c.rec);
+    const tP=list("BANK & OTHER PAYMENTS","pay",["Particulars","Bank","Cheque no.","Amount (₹)"],x=>[x.part||"",bankLbl("pay",x.bank),x.chq||stmChq(doc.date,"pay",doc.pay.indexOf(x))||"",N(num(x.amt))],c.pay);
+    add("CASH BOOK");
+    const ob=add("Opening balance (cash)","","",N(c.openBal));
+    add("Add: Cash sale HSD","","",F(`D${cH}`,c.cashHamt));add("Add: Cash sale MS","","",F(`D${cM}`,c.cashMamt));
+    add("Add: Cash sale lube","","",F(`D${tL}`,c.lube));const lr=add("Add: Bank & other receipts","","",F(`D${tR}`,c.rec));
+    const gt=add("Grand total","","",F(`SUM(D${ob}:D${lr})`,c.grand));
+    const lp=add("Less: Bank & other payments","","",F(`D${tP}`,c.pay));
+    add("CASH IN HAND","","",F(`D${gt}-D${lp}`,c.cih));
+    const ws=XLSX.utils.aoa_to_sheet(R);
+    ws["!cols"]=[{wch:30},{wch:16},{wch:16},{wch:18}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Day "+doc.date.split("-").reverse().join("-"));
+    const out=XLSX.write(wb,{type:"array",bookType:"xlsx"});
+    const fname=`Bihani-DayBook-${doc.date.split("-").reverse().join("-")}.xlsx`;
+    setB("Export ▾");
+    await downloads.save({filename:fname,data:new Uint8Array(out)});
+  }catch(e){setB("Export ▾");if(e&&e.code==="declined")return;status("err","Export nahi hua: "+(e&&e.message||e));}
+}
+
+
+// ---------- print-ready PDF of one day ----------
+CDN.jspdf="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+CDN.autotable="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js";
+let prepBy=LS.get("bb.prep");if(!["","Prakash Chand","Vikas Swami"].includes(prepBy))prepBy="";
+async function exportPdf(mode){const noRead=mode==="noread";
+  const btn=$("#prtBtn");const setB=t=>{if(btn)btn.textContent=t;};
+  if(!downloads){status("err","Is view mein download nahi ho sakta.");return;}
+  try{
+    setB("Ban raha hai…");await flush();await loadScript(CDN.jspdf);await loadScript(CDN.autotable);
+    const doc=normalize(cur,cur.date),c=calcFor(doc);
+    const make=(FS,PAD)=>{const P=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
+    const W=P.internal.pageSize.getWidth(),M=12;
+    const n2=v=>v==null||v===""?"":(+v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const d=parseISO(doc.date);
+    P.setFont("helvetica","bold");P.setFontSize(15);P.text("BIHANI BROTHERS - DAY BOOK",M,15);
+    P.setFont("helvetica","normal");P.setFontSize(9);P.text("Prakash Chand  |  Mobile 9460301561",M,20.5);
+    P.setFont("helvetica","bold");P.setFontSize(11);
+    P.text(d.toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}),W-M,15,{align:"right"});
+    P.setDrawColor(224,38,45);P.setLineWidth(.6);P.line(M,23.5,W-M,23.5);
+    let y=27;
+    const head={fillColor:[234,240,251],textColor:[30,63,138],fontStyle:"bold"},foot={fillColor:[246,248,252],textColor:[20,32,64],fontStyle:"bold"};
+    const tbl=(title,headRow,body,footRow,opts={})=>{
+      P.autoTable(Object.assign({startY:y,head:[[{content:title,colSpan:headRow.length,styles:{halign:"left",fillColor:[30,63,138],textColor:255}}],headRow],body,foot:footRow?[footRow]:undefined,
+        theme:"grid",styles:{fontSize:FS,cellPadding:PAD,lineColor:[213,220,234],lineWidth:.15},headStyles:head,footStyles:foot,showFoot:"lastPage",
+        margin:{left:opts.left??M,right:opts.right??M},tableWidth:opts.width??"auto",columnStyles:opts.cols||{},didParseCell:h=>{if(h.section==="foot")h.cell.styles.halign=h.column.index>0?"right":"left";}},opts.extra||{}));
+      return P.lastAutoTable.finalY;};
+    const half=(W-2*M-6)/2,R={halign:"right"};
+    // meter readings side by side
+    const meterBody=(k,label,n)=>{const rows=c[k].rows.slice(0,n).map((r,i)=>[`${label} ${i+1}`,n2(r.open),n2(r.close),n2(r.sale)]);rows.push(["Less: Testing","",n2(doc[k].test),doc[k].test?"-"+n2(doc[k].test):""]);return rows;};
+    if(!noRead){const yH=tbl("HSD METER READING",["Nozzle","Opening","Closing","Sale (Ltr)"],meterBody("hsd","HSD",HSD_N),["Total HSD sale","","",n2(c.hsd.total)],{width:half,right:W-M-half,cols:{1:R,2:R,3:R},extra:{}});
+    const yM=tbl("MS METER READING",["Nozzle","Opening","Closing","Sale (Ltr)"],meterBody("ms","MS",MS_N),["Total MS sale","","",n2(c.ms.total)],{left:M+half+6,width:half,cols:{1:R,2:R,3:R},extra:{}});
+    y=Math.max(yH,yM)+4;}
+    y=tbl("RATE & CASH SALE",["Item","Rate (Rs/Ltr)","Total sale (Ltr)","Credit (Ltr)","Cash (Ltr)","Cash amount (Rs)"],
+      [["HSD",n2(c.rateH),n2(c.hsd.total),n2(c.crHqty),n2(c.cashHqty),n2(c.cashHamt)],["MS",n2(c.rateM),n2(c.ms.total),n2(c.crMqty),n2(c.cashMqty),n2(c.cashMamt)]],
+      ["Total cash sale (fuel)","","","","",n2(r2(c.cashHamt+c.cashMamt))],{cols:{1:R,2:R,3:R,4:R,5:R},extra:{}})+4;
+    const crBody=(key,rate)=>doc[key].map(r=>[r.party||"",r.inv||"",n2(num(r.qty)),n2(r2(z(num(r.qty))*rate))]);
+    const yCH=tbl("CREDIT SALE - HSD",["Party","Invoice","Qty (Ltr)","Amount (Rs)"],crBody("crH",c.rateH),["Total","",n2(c.crHqty),n2(c.crHamt)],{width:half,right:W-M-half,cols:{2:R,3:R}});
+    const yCM=tbl("CREDIT SALE - MS",["Party","Invoice","Qty (Ltr)","Amount (Rs)"],crBody("crM",c.rateM),["Total","",n2(c.crMqty),n2(c.crMamt)],{left:M+half+6,width:half,cols:{2:R,3:R}});
+    y=Math.max(yCH,yCM)+4;
+    const bank=v=>v==="CA"?"Current A/c":v==="OD"?"O/D A/c":"";
+    const yR=tbl("BANK & OTHER RECEIPTS",["Particulars","Bank","Amount (Rs)"],doc.rec.map(r=>[r.part||"",bankLbl("rec",r.bank),n2(num(r.amt))]),["Total","",n2(c.rec)],{width:half,right:W-M-half,cols:{2:R}});
+    const yP=tbl("BANK & OTHER PAYMENTS",["Particulars","Bank","Chq no.","Amount (Rs)"],doc.pay.map((r,i)=>[r.part||"",bankLbl("pay",r.bank),r.chq||stmChq(doc.date,"pay",i)||"",n2(num(r.amt))]),["Total","","",n2(c.pay)],{left:M+half+6,width:half,cols:{3:R}});
+    y=Math.max(yR,yP)+4;
+    const yL=tbl("CASH SALE - LUBE",["Item","Qty","Amount (Rs)"],doc.lube.map(r=>[r.item||"",n2(num(r.qty)),n2(num(r.amt))]),["Total","",n2(c.lube)],{width:half,right:W-M-half,cols:{1:R,2:R}});
+    const yB=tbl("CASH BOOK",["Particulars","Amount (Rs)"],[
+      ["Opening balance (cash)",n2(c.openBal)],["Add: Cash sale HSD",n2(c.cashHamt)],["Add: Cash sale MS",n2(c.cashMamt)],["Add: Cash sale lube",n2(c.lube)],["Add: Bank & other receipts",n2(c.rec)],
+      [{content:"Grand total",styles:{fontStyle:"bold"}},{content:n2(c.grand),styles:{fontStyle:"bold"}}],["Less: Bank & other payments",n2(c.pay)]],
+      ["CASH IN HAND",n2(c.cih)],{left:M+half+6,width:half,cols:{1:R},extra:{footStyles:Object.assign({},foot,{fillColor:[255,246,230],textColor:[178,106,0],fontSize:FS+1.5})}});
+    y=Math.max(yL,yB)+12;
+    if(y>P.internal.pageSize.getHeight()-20){P.addPage();y=25;}
+    P.setFont("helvetica","normal");P.setFontSize(9);P.setTextColor(90,102,128);
+    P.text("Prepared by: ____________________",M,y);if(prepBy){P.setFont("helvetica","bold");P.setTextColor(20,32,64);P.text(prepBy,M+23,y-1.2);P.setFont("helvetica","normal");P.setTextColor(90,102,128);}P.text("Checked by (Partner): ____________________",W-M,y,{align:"right"});
+    return P;};
+    // ek hi A4 page: zarurat ho to font chhota karte jao
+    let P;for(const[a,b]of[[8.5,1.4],[7.8,1.1],[7.2,0.9],[6.6,0.7],[6,0.55],[5.4,0.4],[4.8,0.3]]){P=make(a,b);if(P.getNumberOfPages()===1)break;}
+    const W=P.internal.pageSize.getWidth(),M=12;const pages=P.getNumberOfPages();for(let i=1;i<=pages;i++){P.setPage(i);P.setFontSize(7.5);P.setTextColor(150);P.text(`Page ${i} of ${pages}`,W-M,P.internal.pageSize.getHeight()-6,{align:"right"});}
+    const fname=`Bihani-DayBook-${doc.date.split("-").reverse().join("-")}${noRead?"-without-reading":""}.pdf`;
+    setB("Print ▾");
+    await downloads.save({filename:fname,data:P.output("arraybuffer")});
+  }catch(e){setB("Print ▾");if(e&&e.code==="declined")return;status("err","PDF nahi bana: "+(e&&e.message||e));}
+}
+
+document.addEventListener("click",()=>document.querySelectorAll(".expmenu").forEach(m=>m.hidden=true));
+
+// ---------- tanker RJ07GB8387: month-wise HSD / MS received ----------
+const TRUCK_NO="RJ07GB8387";
+const TANKER_SVG='<svg viewBox="0 0 64 36" aria-hidden="true"><rect x="2" y="6" width="38" height="18" rx="9" fill="currentColor" opacity=".9"/><rect x="8" y="10" width="26" height="3" rx="1.5" fill="#fff" opacity=".55"/><path d="M40 12h11l7 7v5H40z" fill="currentColor"/><rect x="44" y="14" width="7" height="5" rx="1" fill="#fff" opacity=".8"/><rect x="1" y="23" width="60" height="4" rx="1" fill="currentColor" opacity=".75"/><circle cx="12" cy="29" r="4.2" fill="#1f2a44"/><circle cx="12" cy="29" r="1.8" fill="#fff"/><circle cx="26" cy="29" r="4.2" fill="#1f2a44"/><circle cx="26" cy="29" r="1.8" fill="#fff"/><circle cx="50" cy="29" r="4.2" fill="#1f2a44"/><circle cx="50" cy="29" r="1.8" fill="#fff"/></svg>';
+const tankMap=new Map();let tMonth="",tkEdit=null;
+function tankRefresh(){if(!$("#tankView").hidden&&!tkEdit&&!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("#tankBody input,#tankBody select")))renderTank();}
+async function putTank(e){tankMap.set(e.id,e);if(!db)return;
+  try{await db.doc("tanker/"+e.id).set({id:e.id,type:e.type==="open"?"open":"rec",date:e.date,fuel:e.fuel,inv:e.inv||"",qty:e.qty,note:e.note||"",by:myId||null,at:new Date().toISOString()});$("#tText").textContent="Saved";}
+  catch(x){$("#tText").textContent="Save nahi hua — dobara try karo.";}}
+function fyStart(m){const[y,mo]=m.split("-").map(Number);return mo>=4?y:y-1;}
+function renderTank(){
+  const body=$("#tankBody");$("#tMonthPick").value=tMonth;body.replaceChildren();
+  const all=[...tankMap.values()].filter(e=>e.date).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:((a.at||"")<(b.at||"")?-1:1));
+  const rows=all.filter(e=>e.date.startsWith(tMonth));
+  let H=0,M=0,oH=0,oM=0;for(const e of rows){const q=z(num(e.qty));if(e.fuel==="HSD"){H+=q;if(e.type==="open")oH+=q;}else if(e.fuel==="MS"){M+=q;if(e.type==="open")oM+=q;}}
+  const mName=parseISO(tMonth+"-01").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  const head=el("div",{class:"tk-head"});head.innerHTML=TANKER_SVG;head.append(el("div",{},el("div",{class:"daytitle",style:"margin:0",text:TRUCK_NO}),el("div",{class:"hint",style:"margin:0",text:"Tanker stock · "+mName})));
+  body.append(head);
+  const k=(cls,l,v,sub)=>el("div",{class:"kpi tk-kpi "+cls},el("div",{class:"l",text:l}),el("div",{class:"v",text:v}),sub?el("div",{class:"hint",style:"margin:2px 0 0",text:sub}):null);
+  const nH=rows.filter(e=>e.fuel==="HSD"&&e.type!=="open").length,nM=rows.filter(e=>e.fuel==="MS"&&e.type!=="open").length;const subT=(n,o)=>`${n} trip`+(o?` + opening ${ltr(r2(o))} L`:"");
+  body.append(el("div",{class:"tk-sum"},k("hsd","Total HSD",ltr(r2(H))+" L",subT(nH,oH)),k("ms","Total MS",ltr(r2(M))+" L",subT(nM,oM))));
+  // add form
+  if(canWrite){
+    const f=el("form",{class:"bk-form tk-form",autocomplete:"off"},
+      el("label",{},"Type",el("select",{id:"tkType",onchange:ev=>{const o=ev.target.value==="open";$("#tkInv").disabled=o;if(o)$("#tkInv").value="";}},el("option",{value:"rec",text:"Receipt"}),el("option",{value:"open",text:"Opening stock"}))),
+      el("label",{},"Date",el("input",{type:"date",id:"tkDate",value:(curDate.startsWith(tMonth)?curDate:tMonth+"-01"),required:true})),
+      el("label",{},"Fuel",el("select",{id:"tkFuel"},el("option",{value:"HSD",text:"HSD"}),el("option",{value:"MS",text:"MS"}))),
+      el("label",{},"Invoice no.",el("input",{id:"tkInv"})),
+      el("label",{},"Qty (Ltr)",el("input",{id:"tkQty",class:"n",inputmode:"decimal",required:true})),
+      el("label",{class:"wide"},"Note",el("input",{id:"tkNote",placeholder:"optional"})),
+      el("button",{class:"btn primary",type:"submit"},"Add"));
+    f.addEventListener("submit",ev=>{ev.preventDefault();const q=num($("#tkQty").value);
+      if(!(q>0)){$("#tText").textContent="Qty (litre) daalo.";return;}
+      const e={id:"t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),type:$("#tkType").value,date:$("#tkDate").value,fuel:$("#tkFuel").value,inv:$("#tkInv").value.trim(),qty:q,note:$("#tkNote").value.trim()};
+      putTank(e);tMonth=e.date.slice(0,7);renderTank();$("#tkInv").focus();});
+    body.append(el("section",{class:"card"},el("h2",{text:"New entry"}),f));}
+  // list
+  const t=el("table",{class:"ledger tk-t"});
+  t.append(el("thead",{},el("tr",{},...["Date","Fuel","Invoice no.","Qty (Ltr)","Note",""].map((h,i)=>el("th",{class:i===3?"num":"",text:h})))));
+  const tb=el("tbody");
+  for(const e of rows){
+    if(tkEdit===e.id&&canWrite){
+      const iT=el("select",{},el("option",{value:"rec",text:"Receipt"}),el("option",{value:"open",text:"Opening stock"}));iT.value=e.type==="open"?"open":"rec";const iD=el("input",{type:"date",value:e.date}),iF=el("select",{},el("option",{value:"HSD",text:"HSD"}),el("option",{value:"MS",text:"MS"})),iI=el("input",{value:e.inv||""}),iQ=el("input",{class:"n",inputmode:"decimal",value:e.qty??""}),iN=el("input",{value:e.note||""});iF.value=e.fuel;
+      const msg=el("span",{class:"warn"});
+      const sv=()=>{const q=num(iQ.value);if(!iD.value||!(q>0)){msg.textContent="Date aur qty daalo.";return;}
+        Object.assign(e,{type:iT.value,date:iD.value,fuel:iF.value,inv:iI.value.trim(),qty:q,note:iN.value.trim()});tkEdit=null;putTank(e);tMonth=e.date.slice(0,7);renderTank();};
+      [iD,iI,iQ,iN].forEach(x=>x.addEventListener("keydown",ev=>{if(ev.key==="Enter")sv();if(ev.key==="Escape"){tkEdit=null;renderTank();}}));
+      tb.append(el("tr",{class:"editing"},el("td",{},iD),el("td",{},iF),el("td",{},iT,iI),el("td",{},iQ),el("td",{},iN,msg),
+        el("td",{class:"acts"},el("button",{class:"btn small primary",type:"button",onclick:sv},"Save"),el("button",{class:"btn small",type:"button",onclick:()=>{tkEdit=null;renderTank();}},"Cancel"))));
+      continue;}
+    const acts=el("td",{class:"acts"});
+    if(canWrite){acts.append(el("button",{class:"rowedit",type:"button",title:"Edit","aria-label":"Edit",onclick:()=>{tkEdit=e.id;renderTank();}},"✎"));
+      const hold=el("span",{class:"confirm"});acts.append(hold);
+      hold.append(el("button",{class:"rowdel",type:"button",title:"Delete","aria-label":"Delete",onclick:()=>{hold.replaceChildren(el("button",{class:"btn small danger",onclick:async()=>{tankMap.delete(e.id);renderTank();try{await db.doc("tanker/"+e.id).delete();}catch(x){$("#tText").textContent="Delete nahi hua.";}}},"Delete"),el("button",{class:"btn small",onclick:()=>renderTank()},"No"));}},"×"));}
+    tb.append(el("tr",{},el("td",{text:short(e.date)}),el("td",{},el("span",{class:"tag "+(e.fuel==="HSD"?"hsd":"ms"),text:e.fuel})),e.type==="open"?el("td",{},el("span",{class:"chip",style:"background:var(--cash-soft);color:var(--cash)",text:"Opening stock"})):el("td",{text:e.inv||""}),el("td",{class:"out",text:ltr(z(num(e.qty)))}),el("td",{text:e.note||""}),acts));}
+  if(!rows.length)tb.append(el("tr",{},el("td",{colspan:6,class:"hint",text:"Is mahine tanker se koi stock nahi aaya."})));
+  t.append(tb);
+  t.append(el("tfoot",{},el("tr",{},el("td",{colspan:3,text:"Total HSD"}),el("td",{class:"out",text:ltr(r2(H))}),el("td"),el("td")),el("tr",{},el("td",{colspan:3,text:"Total MS"}),el("td",{class:"out",text:ltr(r2(M))}),el("td"),el("td"))));
+  body.append(el("section",{class:"card"},el("h2",{text:"Stock – "+mName}),el("div",{class:"tscroll"},t)));
+  // financial-year month-wise summary
+  const fy=fyStart(tMonth);const mt=el("table",{class:"month"});
+  mt.append(el("thead",{},el("tr",{},...["Mahina","HSD (Ltr)","MS (Ltr)","Trips"].map((h,i)=>el("th",{class:i?"num":"",text:h})))));
+  const mb=el("tbody");let TH=0,TM=0,TN=0;
+  for(let i=0;i<12;i++){const d=new Date(fy,3+i,1);const m=iso(d).slice(0,7);let h=0,ms=0,n=0;for(const e of all)if(e.date.startsWith(m)){if(e.type!=="open")n++;if(e.fuel==="HSD")h+=z(num(e.qty));else ms+=z(num(e.qty));}
+    TH+=h;TM+=ms;TN+=n;
+    mb.append(el("tr",{class:m===tMonth?"cur":"",tabindex:0,onclick:()=>{tMonth=m;renderTank();},onkeydown:ev=>{if(ev.key==="Enter"){tMonth=m;renderTank();}}},
+      el("td",{text:d.toLocaleDateString("en-IN",{month:"short",year:"numeric"})}),el("td",{class:"out",text:h?ltr(r2(h)):"—"}),el("td",{class:"out",text:ms?ltr(r2(ms)):"—"}),el("td",{class:"out",text:n||"—"})));}
+  mt.append(mb);mt.append(el("tfoot",{},el("tr",{},el("td",{text:`Total FY ${fy}-${String(fy+1).slice(2)}`}),el("td",{class:"out",text:ltr(r2(TH))}),el("td",{class:"out",text:ltr(r2(TM))}),el("td",{class:"out",text:TN}))));
+  body.append(el("section",{class:"card"},el("h2",{text:`Month-wise (FY ${fy}-${String(fy+1).slice(2)})`}),el("div",{class:"tscroll"},mt),el("p",{class:"hint",text:"Kisi mahine par tap karo to us mahine ki entries upar dikhengi."})));
+  $("#tText").textContent="";
+}
+
+const shiftTMonth=n=>{const d=parseISO(tMonth+"-01");d.setMonth(d.getMonth()+n);tMonth=iso(d).slice(0,7);renderTank();};
+$("#prevTMonth").onclick=()=>shiftTMonth(-1);$("#nextTMonth").onclick=()=>shiftTMonth(1);
+$("#tMonthPick").onchange=e=>{if(e.target.value){tMonth=e.target.value;renderTank();}};
+
+// ---------- Sales Officer Report (stock check since last SO inspection) ----------
+let soSet={inspDate:"",repDate:"",hsd:{stockInsp:null,stockNow:null,pct:0.25,insp:[],newr:[],testOv:{},recOv:{}},ms:{stockInsp:null,stockNow:null,pct:0.74,insp:[],newr:[],testOv:{},recOv:{}}},soSaveT=null;
+function soNorm(o){o=o||{};const d={inspDate:o.inspDate||"",repDate:o.repDate||""};
+  for(const[k,p]of[["hsd",0.25],["ms",0.74]]){const x=o[k]||{};d[k]={stockInsp:x.stockInsp??null,stockNow:x.stockNow??null,pct:x.pct??p,insp:Array.isArray(x.insp)?x.insp:[],newr:Array.isArray(x.newr)?x.newr:[],testOv:Object.assign({},x.testOv||{}),recOv:Object.assign({},x.recOv||{})};}
+  d.files=Array.isArray(o.files)?o.files.filter(x=>x&&x.id):[];
+  return d;}
+let soPending=false,soLastW="";const soKey=o=>{const c=soNorm(o);return JSON.stringify(sortDeep(c));};
+function soSave(){soPending=true;clearTimeout(soSaveT);soSaveT=setTimeout(async()=>{if(!db){soPending=false;return;}try{soLastW=soKey(soSet);const body=JSON.parse(JSON.stringify(Object.assign({},soSet,{by:myId||null,at:new Date().toISOString()})));soPending=false;await db.doc("settings/so").set(body);$("#soText").textContent="Saved";}catch(e){$("#soText").textContent="Save nahi hua — dobara try karo.";}},800);}
+function soRefresh(){if(!$("#soView").hidden&&!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("#soBody input")))renderSO();}
+const MONTH_UP=d=>parseISO(d+"-01").toLocaleDateString("en-IN",{month:"long"}).toUpperCase();
+// aakhri asli closing reading (from ke baad, to tak) — aage carry ki hui opening nahi
+function lastClose(k,i,from,to){const ds=[...days.keys()].filter(d=>d>from&&d<=to).sort().reverse();for(const d of ds){const v=normalize(days.get(d),d)[k].close[i];if(v!=null)return v;}return null;}
+function lastCloseDate(from){const ds=[...days.keys()].filter(d=>d>from).sort().reverse();for(const d of ds){const x=normalize(days.get(d),d);if(x.hsd.close.some(v=>v!=null)||x.ms.close.some(v=>v!=null))return d;}return null;}
+function soCalc(SS){SS=SS||soSet;
+  const I=SS.inspDate,D=SS.repDate||iso(new Date());
+  if(!I)return null;
+  const all=calcAll();
+  const calcOn=date=>{let prev=null,res=null;for(const d of [...all.keys()].sort()){if(d>date)break;if(d===date){res=all.get(d);break;}prev=all.get(d);}
+    if(res)return res;return calcDay(normalize(null,date),prev);};
+  const ci=calcOn(I),cd=calcOn(D);
+  const months=[];{let m=I.slice(0,7);while(m<=D.slice(0,7)){months.push(m);const x=parseISO(m+"-01");x.setMonth(x.getMonth()+1);m=iso(x).slice(0,7);}}
+  const out={I,D,months};
+  for(const[k,n,F]of[["hsd",HSD_N,"HSD"],["ms",MS_N,"MS"]]){const S=SS[k];
+    const noz=[];for(let i=0;i<n;i++){const ai=null,an=lastClose(k,i,I,D); /* auto: day book ki reading; SO ki asli reading likh kar badlo */
+      const insp=S.insp[i]??ai,nw=S.newr[i]??an;noz.push({insp,nw,autoI:ai,autoN:an,sale:(insp!=null&&nw!=null)?r2(nw-insp):0});}
+    const test={},rec={};for(const m of months){test[m]=0;rec[m]=0;}
+    for(const[d,c]of all)if(d>I&&d<=D&&days.has(d))test[d.slice(0,7)]+=c[k].test;
+    for(const e of tankMap.values())if(e.fuel===F&&e.type!=="open"&&e.date>I&&e.date<=D)rec[e.date.slice(0,7)]+=z(num(e.qty));
+    for(const m of months){test[m]=r2(test[m]);rec[m]=r2(rec[m]);}
+    const testAuto={...test},recAuto={...rec};
+    for(const m of months){if(S.testOv[m]!=null)test[m]=S.testOv[m];if(S.recOv[m]!=null)rec[m]=S.recOv[m];}
+    const T=r2(Object.values(test).reduce((a,b)=>a+b,0)),R=r2(Object.values(rec).reduce((a,b)=>a+b,0));
+    const sale=r2(noz.reduce((a,b)=>a+b.sale,0));const si=z(num(S.stockInsp));const totStock=r2(si+R);
+    const now=num(S.stockNow);const dip=now==null?null:r2(totStock-now);const meter=r2(sale-T);
+    const vr=dip==null?null:r2(meter-dip);const pvar=(vr==null||!dip)?null:Math.round(vr/dip*10000)/100;const s4=now==null?null:Math.round(now*0.04);
+    const ok=pvar==null?null:Math.abs(pvar)<=z(num(S.pct));
+    out[k]={noz,test,rec,testAuto,recAuto,T,R,sale,si,totStock,now,dip,meter,var:vr,pvar,s4,ok,pct:S.pct};}
+  return out;}
+
+// ---------- Daily Sales Report: pichhli SO report se aaj tak, SO format mein (day book + tanker se apne aap) ----------
+let dsrSet={base:"",hsd:{dip:null},ms:{dip:null}},dsrT=null,dsrPend=false,dsrLastW="";
+const dsrKey=o=>JSON.stringify(sortDeep({base:o.base||"",hsd:{dip:o.hsd&&o.hsd.dip!=null?o.hsd.dip:null},ms:{dip:o.ms&&o.ms.dip!=null?o.ms.dip:null}}));
+function dsrSave(){dsrPend=true;clearTimeout(dsrT);dsrT=setTimeout(async()=>{if(!db){dsrPend=false;return;}try{dsrLastW=dsrKey(dsrSet);const b=JSON.parse(JSON.stringify(Object.assign({},dsrSet,{by:myId||null,at:new Date().toISOString()})));dsrPend=false;await db.doc("settings/dsr").set(b);$("#soText").textContent="Saved";}catch(e){$("#soText").textContent="Save nahi hua — dobara try karo.";}},800);}
+function dsrBase(){
+  let h=null;for(const r of soHist.values())if(r.set&&(!h||r.to>h.to))h=r;
+  if(h)return{date:h.to,hsd:{read:h.set.hsd&&h.set.hsd.newr||[],stock:num(h.set.hsd&&h.set.hsd.stockNow)},ms:{read:h.set.ms&&h.set.ms.newr||[],stock:num(h.set.ms&&h.set.ms.stockNow)}};
+  if(soSet.repDate&&(soSet.hsd.newr.some(v=>v!=null)||soSet.ms.newr.some(v=>v!=null)))
+    return{date:soSet.repDate,hsd:{read:soSet.hsd.newr,stock:num(soSet.hsd.stockNow)},ms:{read:soSet.ms.newr,stock:num(soSet.ms.stockNow)}};
+  return null;}
+function dsrCalc(){
+  const B=dsrBase();if(!B)return null;
+  const all=calcAll();const E=lastCloseDate(B.date);const D=E||B.date;
+  const months=[];{let m=B.date.slice(0,7);while(m<=D.slice(0,7)){months.push(m);const x=parseISO(m+"-01");x.setMonth(x.getMonth()+1);m=iso(x).slice(0,7);}}
+  const out={B:B.date,E,months};
+  for(const[k,n,F]of[["hsd",HSD_N,"HSD"],["ms",MS_N,"MS"]]){const S=soSet[k],base=B[k];
+    const noz=[];for(let i=0;i<n;i++){const old=base.read[i]??null;const cur=lastClose(k,i,B.date,D);noz.push({old,cur,sale:(old!=null&&cur!=null)?r2(cur-old):0});}
+    const test={},rec={};for(const m of months){test[m]=0;rec[m]=0;}
+    for(const[d,c]of all)if(d>B.date&&d<=D&&days.has(d))test[d.slice(0,7)]+=c[k].test;
+    for(const e of tankMap.values())if(e.fuel===F&&e.type!=="open"&&e.date>B.date&&e.date<=D)rec[e.date.slice(0,7)]+=z(num(e.qty));
+    const T=r2(Object.values(test).reduce((a,b)=>a+b,0)),R=r2(Object.values(rec).reduce((a,b)=>a+b,0));
+    const sale=r2(noz.reduce((a,b)=>a+b.sale,0)),si=z(base.stock),totStock=r2(si+R),meter=r2(sale-T),book=r2(totStock-meter);
+    const now=dsrSet.base===B.date?num(dsrSet[k].dip):null;const dip=now==null?null:r2(totStock-now);
+    const vr=dip==null?null:r2(meter-dip);const pvar=(vr==null||!dip)?null:Math.round(vr/dip*10000)/100;const s4=now==null?null:Math.round(now*0.04);
+    const ok=pvar==null?null:Math.abs(pvar)<=z(num(S.pct));
+    out[k]={noz,test,rec,T,R,sale,si,totStock,meter,book,now,dip,var:vr,pvar,s4,ok,pct:S.pct};}
+  return out;}
+function dsrCard(){
+  const R=dsrCalc();
+  if(!R)return el("div",{class:"empty",text:"Pichhli SO report (New reading aur Today's Stock ke saath) bharo ya close karo — uske baad se ki sale yahan apne aap dikhegi."});
+  const wrap=el("div",{});
+  wrap.append(el("p",{class:"hint",style:"margin:0 0 8px",text:`Pichhli SO report ${R.B.split("-").reverse().join("-")} se `+(R.E?`day book ki aakhri entry ${R.E.split("-").reverse().join("-")} tak.`:"— abhi day book mein uske baad ki koi entry nahi hai.")}));
+  const grid=el("div",{class:"grid2"});
+  for(const[k,label]of[["hsd","HSD"],["ms","MS"]]){const X=R[k];
+    const nt=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Nozzle"}),el("th",{class:"num",text:"Aaj ki reading (day book)"}),el("th",{class:"num",text:"Pichhli SO reading"}),el("th",{class:"num",text:"Sale (Ltr)"}))),
+      el("tbody",{},...X.noz.map((z2,i)=>el("tr",{},el("td",{text:`${label} ${i+1}`}),el("td",{class:"out",text:z2.cur==null?"—":ltr(z2.cur)}),el("td",{class:"out",text:z2.old==null?"—":ltr(z2.old)}),el("td",{class:"out",text:ltr(z2.sale)})))),
+      el("tfoot",{},el("tr",{},el("td",{colspan:3,text:"Total sale"}),el("td",{class:"out",text:ltr(X.sale)}))));
+    const mt=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Mahina"}),el("th",{class:"num",text:"Testing (Ltr)"}),el("th",{class:"num",text:"Receipts (Ltr)"}))),
+      el("tbody",{},...R.months.map(m=>el("tr",{},el("td",{text:MONTH_UP(m)}),el("td",{class:"out",text:ltr(r2(X.test[m]))}),el("td",{class:"out",text:ltr(r2(X.rec[m]))})))),
+      el("tfoot",{},el("tr",{},el("td",{text:"Total"}),el("td",{class:"out",text:ltr(X.T)}),el("td",{class:"out",text:ltr(X.R)}))));
+    const dIn=el("input",{id:`so-dsr-${k}-dip`,class:"f n",inputmode:"decimal",value:X.now??"",placeholder:"dip",disabled:!canWrite||undefined,"aria-label":`${label} today's stock (dip)`});
+    dIn.addEventListener("input",()=>{if(dsrSet.base!==R.B)dsrSet={base:R.B,hsd:{dip:null},ms:{dip:null}};dsrSet[k].dip=num(dIn.value);dsrSave();});dIn.addEventListener("change",()=>setTimeout(renderSO,0));
+    const ok=X.ok;
+    const st=el("table",{class:"summary"},el("tbody",{},
+      el("tr",{},el("td",{class:"lbl",text:"Prev. Opn. Stock (pichhli SO)"}),el("td",{class:"out",text:ltr(X.si)})),
+      el("tr",{},el("td",{class:"lbl",text:"Receipts"}),el("td",{class:"out",text:ltr(X.R)})),
+      el("tr",{class:"total"},el("td",{text:"Total Stock"}),el("td",{class:"out",text:ltr(X.totStock)})),
+      el("tr",{},el("td",{class:"lbl",text:`Meter Sale (${ltr(X.sale)} − testing ${ltr(X.T)})`}),el("td",{class:"out",text:ltr(X.meter)})),
+      el("tr",{class:"total"},el("td",{text:"Book stock (Total − Meter Sale)"}),el("td",{class:"out",text:ltr(X.book)})),
+      el("tr",{},el("td",{class:"lbl",text:"Today's Stock (dip)"}),el("td",{class:"w-amt"},dIn)),
+      el("tr",{},el("td",{class:"lbl",text:"Dip Sale"}),el("td",{class:"out",text:X.dip==null?"Dip daalo":ltr(X.dip)})),
+      el("tr",{class:"total"},el("td",{text:"+/- Var (Meter − Dip)"}),el("td",{class:"out"+(X.var!=null&&X.var<0?" warn":""),text:X.var==null?"—":ltr(X.var)})),
+      el("tr",{},el("td",{class:"lbl",text:"% Var"}),el("td",{class:"out",text:X.pvar==null?"—":X.pvar.toFixed(2)})),
+      el("tr",{},el("td",{class:"lbl",text:"4% Stock Var"}),el("td",{class:"out",text:X.s4==null?"—":String(X.s4)})),
+      el("tr",{class:"cih"},el("td",{text:`Var in permissible limit (${X.pct}%)`}),el("td",{class:"out"+(ok===false?" warn":""),text:ok==null?"—":(ok?"Yes":"No")}))));
+    grid.append(el("section",{class:"card"},el("h2",{},label,el("span",{class:"tag "+k,text:`${short(R.B)} → ${R.E?short(R.E):"—"}`})),
+      el("div",{class:"tscroll"},nt),el("h2",{style:"margin-top:14px",text:"Testing & receipts"}),el("div",{class:"tscroll"},mt),el("h2",{style:"margin-top:14px",text:"Variation details"}),st));}
+  wrap.append(grid,el("p",{class:"hint",text:"Sab apne aap: readings aur testing day book se, receipts tanker page se, Prev. Opn. Stock pichhli SO report ke Today's Stock se. Sirf Today's Stock (dip) bharna hai to variation bhi dikhega. SO aaye to neeche SO report bharo aur close karo — ye report us din se nayi shuru ho jayegi."}));
+  return wrap;}
+
+// ---------- SO report ke saath original photo / PDF ----------
+let assetsCap=null;
+async function shrinkImage(file){
+  if(!/^image\/(jpeg|png|webp)$/.test(file.type))return file;
+  try{const bmp=await createImageBitmap(file);const max=2200,sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+    if(sc===1&&file.size<2.5e6)return file;
+    const cv=document.createElement("canvas");cv.width=Math.round(bmp.width*sc);cv.height=Math.round(bmp.height*sc);cv.getContext("2d").drawImage(bmp,0,0,cv.width,cv.height);
+    const b=await new Promise(r=>cv.toBlob(r,"image/jpeg",0.85));return b&&b.size<file.size?b:file;}catch(e){return file;}}
+function attachCard(files,save,title){
+  const sec=el("section",{class:"card so-att"});sec.append(el("h2",{text:title||"Original SO report (photo / PDF)"}));
+  const msg=el("span",{class:"hint",style:"margin:0"});
+  const grid=el("div",{class:"att-grid"});
+  files.forEach((f,i)=>{const url=window.__blobLink?window.__blobLink(f.id):"/_blob/"+f.id;const imgUrl=window.__blobImg?window.__blobImg(f.id):url;const isImg=(f.type||"").startsWith("image/");
+    const a=el("a",{href:url,target:"_blank",rel:"noopener",class:"att-item",title:"Kholo: "+f.name});
+    if(isImg)a.append(el("img",{src:imgUrl,alt:f.name,loading:"lazy"}));else a.append(el("div",{class:"att-pdf",text:"PDF"}));
+    a.append(el("span",{class:"att-name",text:f.name}));
+    const w=el("div",{class:"att-wrap"},a);
+    if(assetsCap&&canWrite){const d=el("button",{class:"att-del",type:"button",title:"Hatao","aria-label":"Hatao "+f.name,text:"×"});
+      d.onclick=async()=>{if(!d.dataset.armed){d.dataset.armed="1";d.textContent="Delete?";d.classList.add("armed");setTimeout(()=>{if(d.isConnected){delete d.dataset.armed;d.textContent="×";d.classList.remove("armed");}},4000);return;}
+        d.disabled=true;try{await assetsCap.delete(f.id);}catch(e){if(e&&e.code==="not_uploader"){msg.textContent="Ye file kisi aur ne lagayi hai — wahi ya owner hata sakta hai.";d.disabled=false;return;}}
+        try{await save(files.filter((_,j)=>j!==i));}catch(e){msg.textContent="Hata nahi paya — dobara try karo.";}};
+      w.append(d);}
+    grid.append(w);});
+  if(!files.length)grid.append(el("p",{class:"hint",style:"margin:0",text:"Abhi koi photo ya PDF nahi lagi."}));
+  sec.append(grid);
+  if(assetsCap&&canWrite){
+    const inp=el("input",{type:"file",accept:"image/*,application/pdf",multiple:true,hidden:true});
+    const btn=el("button",{class:"btn small",type:"button",text:"📎 Photo / PDF lagao",onclick:()=>inp.click()});
+    inp.addEventListener("change",async()=>{const list=[...inp.files];inp.value="";if(!list.length)return;
+      btn.disabled=true;const added=[];
+      for(const file of list){msg.textContent=`Upload ho raha hai: ${file.name}…`;
+        try{const blob=await shrinkImage(file);const type=/\.pdf$/i.test(file.name)?"application/pdf":(blob.type||file.type);
+          const r=await assetsCap.upload(blob,{type});added.push({id:r.id,name:file.name,type:r.contentType,size:r.sizeBytes,at:new Date().toISOString(),by:myId||null});}
+        catch(e){const c=e&&e.code;msg.textContent=c==="too_large"?`${file.name}: file 20 MB se badi hai.`:c==="unsupported_type"?`${file.name}: sirf photo (JPG/PNG) ya PDF lag sakti hai.`:c==="quota_or_state"?"Storage bhar gaya — purani files hatao.":`${file.name} upload nahi hui — dobara try karo.`;btn.disabled=false;
+          if(!added.length)return;break;}}
+      try{await save(files.concat(added));}catch(e){msg.textContent="Save nahi hua — dobara try karo.";btn.disabled=false;}});
+    sec.append(el("div",{class:"att-bar"},btn,inp,msg));}
+  else sec.append(el("p",{class:"hint",style:"margin:6px 0 0",text:files.length?"Photo par click karo to badi khulegi.":"Photo / PDF lagane ke liye is page ka edit access chahiye."}));
+  return sec;}
+
+// ---------- Import Data: DSR register ki photo ya Excel se meter readings ----------
+// Register ki har line = us din ki OPENING reading; closing = agle din ki line (mahine ki aakhri closing agle page par).
+let RI=null; // {fuel,month,src,step,aoa,map,rows:[{date,open:[],close:[],test,net,unclear,tick}],n,msg,busy}
+const fuelK=f=>f==="HSD"?"hsd":"ms", fuelN=f=>f==="HSD"?HSD_N:MS_N;
+function riOpen(){RI={fuel:"HSD",month:curDate.slice(0,7),step:"pick",msg:"",busy:false};riRender();}
+function riClose(){const o=$("#riOv");if(o)o.remove();RI=null;document.body.style.overflow="";}
+function riDate(month,day){return addDays(month+"-01",day-1);}
+async function riImgBlob(file,maxB){
+  try{const bmp=await createImageBitmap(file);let max=2600;
+    for(let q=0.9;q>=0.5;q-=0.1){const sc=Math.min(1,max/Math.max(bmp.width,bmp.height));const cv=document.createElement("canvas");cv.width=Math.round(bmp.width*sc);cv.height=Math.round(bmp.height*sc);
+      cv.getContext("2d").drawImage(bmp,0,0,cv.width,cv.height);const b=await new Promise(r=>cv.toBlob(r,"image/jpeg",q));if(b&&(!maxB||b.size<=maxB))return b;max=Math.round(max*0.85);}
+  }catch(e){}
+  return file;}
+async function riPhoto(file){
+  RI.busy=true;RI.msg="Claude photo padh raha hai… (30–60 second)";riRender();
+  try{
+    const sample=await claude.use("sample");if(!sample)throw{code:"not_granted"};
+    const lim=await sample.limits().catch(()=>null);if(!lim||!lim.images)throw{code:"images_unavailable"};
+    const blob=await riImgBlob(file,lim.images.maxBytes);
+    const mName=parseISO(RI.month+"-01").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+    const prompt=`This photo is one page of an HPCL petrol pump "Daily Stock Register" (DSR), product ${RI.fuel}, month ${mName}.
+Each row is one day; the first column is the day of the month (1, 2, 3 ...). The "Totalizer Reading" columns (numbered 1 to 5) hold each nozzle's meter reading at the START of that day, hand-written, usually 6 or 7 digits.
+For every row read: the day number, every totalizer reading from left to right, "Pump Testing" in litres (if written like "10+10" give the sum; blank = null) and "Net Sales From Totalizer".
+Read every digit very carefully. If a number is struck out, overwritten or hard to read, give your best reading and set "unclear": true for that row. Include the row after the last day (it may hold only readings) — it is the next month's opening.
+Ignore the stock, dip, receipt and variation columns.
+Reply with only JSON like: {"rows":[{"day":1,"read":[3862716,5365159,1962485,6639742,644113],"test":25,"net":8530,"unclear":false}]} — "read" has one entry per totalizer column, null for an empty column.`;
+    const res=await sample.json(prompt,{images:[blob],modelTier:"complex"});
+    const rows=(res&&Array.isArray(res.rows)?res.rows:Array.isArray(res)?res:[]).map(r=>({day:Math.round(num(r.day)),read:(Array.isArray(r.read)?r.read:[]).map(num),test:num(r.test),net:num(r.net),unclear:r.unclear===true})).filter(r=>r.day>=1&&r.day<=32&&r.read.some(v=>v!=null));
+    if(!rows.length)throw{code:"empty"};
+    riBuild(rows.map(r=>({date:riDate(RI.month,r.day),read:r.read,test:r.test,net:r.net,unclear:r.unclear})),"open");
+  }catch(e){const c=e&&e.code;
+    RI.msg=c==="not_granted"?"Photo padhne ke liye Claude ki ijazat chahiye — page ke Permissions mein allow karo.":c==="images_unavailable"?"Is jagah photo Claude ko nahi bheji ja sakti. Excel se import karo.":c==="rate_limited"?"Abhi bahut zyada request — thodi der baad try karo.":c==="empty"||c==="invalid_json"?"Photo se readings nahi mili. Saaf, seedhi photo dobara lo.":"Photo nahi padhi gayi — dobara try karo. ("+(c||e&&e.message||"error")+")";
+    RI.step="pick";}
+  RI.busy=false;riRender();}
+// ---- Excel ----
+async function riExcel(file){
+  RI.busy=true;RI.msg="Excel padh raha hoon…";riRender();
+  try{const aoa=(await readTableFile(file)).filter(r=>Array.isArray(r)&&r.some(v=>v!==""&&v!=null));if(!aoa.length)throw 0;
+    RI.aoa=aoa;RI.map=riGuess(aoa);RI.step="map";RI.msg="";}
+  catch(e){RI.msg="Excel nahi padhi gayi — .xlsx, .xls ya .csv file chuno.";RI.step="pick";}
+  RI.busy=false;riRender();}
+function riCellDate(v){if(typeof v==="number"&&v>=1&&v<=32&&Number.isInteger(v))return riDate(RI.month,v);const s=String(v??"").trim();if(/^\d{1,2}$/.test(s)&&+s>=1&&+s<=32)return riDate(RI.month,+s);return parseDate(v);}
+function riGuess(aoa){
+  const W=Math.max(...aoa.map(r=>r.length));let hi=-1;
+  for(let i=0;i<Math.min(aoa.length,15);i++){if(aoa[i].some(v=>/date|tarikh|reading|test|nozzle|sale/i.test(String(v))))hi=i;}
+  const hdr=c=>hi<0?"":aoa.slice(0,hi+1).map(r=>String(r[c]??"")).join(" ");
+  const body=aoa.slice(hi+1);const m={hi,date:-1,test:-1,net:-1,reads:[],mode:"open"};
+  let bestD=0;for(let c=0;c<W;c++){const n=body.filter(r=>riCellDate(r[c])).length;if(/date|tarikh/i.test(hdr(c))&&n)m.date=c,bestD=1e9;else if(n>bestD){bestD=n;m.date=c;}}
+  for(let c=0;c<W;c++){if(c===m.date)continue;const h=hdr(c);const vals=body.map(r=>num(r[c])).filter(v=>v!=null);
+    if(/test/i.test(h)&&m.test<0)m.test=c;else if(/net|sale/i.test(h)&&!/dip/i.test(h)&&m.net<0&&vals.every(v=>v<100000))m.net=c;
+    else if(vals.length&&vals.filter(v=>v>=100000).length>=vals.length*0.6)m.reads.push(c);}
+  if(m.reads.some(c=>/clos/i.test(hdr(c))))m.mode="close";
+  if(m.reads.some(c=>/open/i.test(hdr(c)))&&m.reads.some(c=>/clos/i.test(hdr(c)))){m.reads=m.reads.filter(c=>/clos/i.test(hdr(c)));m.mode="close";}
+  m.reads=m.reads.slice(0,fuelN(RI.fuel));return m;}
+function riTest(v){const s=String(v??"").replace(/\s/g,"");if(!s)return null;if(s.includes("+")){const p=s.split("+").map(num);return p.some(x=>x==null)?null:p.reduce((a,b)=>a+b,0);}return num(s);}
+function riFromExcel(){const m=RI.map;const rows=[];
+  for(const r of RI.aoa.slice(m.hi+1)){const d=riCellDate(r[m.date]);if(!d)continue;const read=m.reads.map(c=>c<0?null:num(r[c]));if(!read.some(v=>v!=null))continue;
+    rows.push({date:d,read,test:m.test<0?null:riTest(r[m.test]),net:m.net<0?null:num(r[m.net]),unclear:false});}
+  if(!rows.length){RI.msg="In columns se koi din nahi mila — column dobara chuno.";riRender();return;}
+  riBuild(rows,m.mode);}
+// ---- common: rows -> check table ----
+function riBuild(rows,mode){
+  rows.sort((a,b)=>a.date<b.date?-1:1);const uniq=[];for(const r of rows){if(!uniq.length||uniq[uniq.length-1].date!==r.date)uniq.push(r);}
+  let n=0;for(const r of uniq)for(let i=0;i<r.read.length;i++)if(r.read[i]!=null)n=Math.max(n,i+1);n=Math.min(n,fuelN(RI.fuel));
+  const pad=a=>Array.from({length:n},(_,i)=>a&&a[i]!=null?a[i]:null);
+  const T=[];const k=fuelK(RI.fuel);
+  if(mode==="open"){
+    for(let i=0;i<uniq.length;i++){const r=uniq[i],nx=uniq[i+1];
+      if(i===uniq.length-1&&r.test==null&&r.net==null&&T.length&&T[T.length-1].date===addDays(r.date,-1))break; // agle mahine ki opening line
+      T.push({date:r.date,open:pad(r.read),close:nx&&nx.date===addDays(r.date,1)?pad(nx.read):pad(null),test:r.test,net:r.net,unclear:r.unclear||(nx&&nx.unclear)||false});}
+  }else{
+    for(let i=0;i<uniq.length;i++){const r=uniq[i],pv=uniq[i-1];let open=pv&&pv.date===addDays(r.date,-1)?pad(pv.read):null;
+      if(!open){const pd=days.get(addDays(r.date,-1));open=pd?pad(normalize(pd,addDays(r.date,-1))[k].close):pad(null);}
+      T.push({date:r.date,open,close:pad(r.read),test:r.test,net:r.net,unclear:r.unclear});}
+  }
+  RI.rows=T;RI.n=n;RI.step="check";RI.msg="";for(const t of T)t.tick=riStat(t).ok;riRender();}
+function riStat(t){
+  const k=fuelK(RI.fuel);const why=[];let sale=null;
+  if(t.open.every(v=>v!=null)&&t.close.every(v=>v!=null))sale=r2(t.close.reduce((a,v,i)=>a+v-t.open[i],0));else why.push("reading khaali");
+  const net=sale==null?null:r2(sale-z(t.test));let diff=null;
+  if(net!=null&&t.net!=null){diff=r2(net-t.net);if(diff!==0)why.push(`register se ${diff>0?"+":""}${ltr(diff)} L farak`);}
+  if(t.close.some((v,i)=>v!=null&&v<t.open[i]))why.push("closing opening se kam");
+  if(t.unclear)why.push("photo mein saaf nahi");
+  const ex=days.get(t.date);if(ex){const e=normalize(ex,t.date)[k];const old=t.close.map((v,i)=>e.close[i]!=null&&v!=null&&e.close[i]!==v?e.close[i]:null).filter(v=>v!=null);
+    if(old.length)why.push("day book mein pehle se: "+old.map(v=>ltr(v).replace(".00","")).join(", "));
+    if(e.test!=null&&t.test!=null&&e.test!==t.test)why.push(`testing pehle se ${e.test}`);}
+  return{sale,net,diff,why,ok:!why.length};}
+async function riImport(){
+  const k=fuelK(RI.fuel);const pick=RI.rows.filter(t=>t.tick);if(!pick.length||!db)return;
+  RI.busy=true;RI.msg="Day book mein bhar raha hoon…";riRender();await flush();
+  let done=0;
+  try{for(const t of pick){const doc=normalize(days.get(t.date),t.date);
+      for(let i=0;i<RI.n;i++){if(t.close[i]!=null)doc[k].close[i]=t.close[i];
+        const pd=days.get(addDays(t.date,-1));const pc=pd?normalize(pd,addDays(t.date,-1))[k].close[i]:null;if(pc==null&&t.open[i]!=null)doc[k].open[i]=t.open[i];}
+      if(t.test!=null)doc[k].test=t.test;
+      const body=JSON.parse(JSON.stringify(doc));for(const x of ["lube","rec","pay","crH","crM"])body[x]=body[x].filter(r=>Object.values(r).some(v=>v!=null&&v!==""));
+      body.by=myId||null;body.at=new Date().toISOString();
+      await db.doc("days/"+t.date).set(body);days.set(t.date,body);done++;}
+    RI.step="done";RI.msg=`${done} din ki ${RI.fuel} readings day book mein bhar di.`;
+    if(pick.some(t=>t.date===curDate)&&!dirty){cur=normalize(days.get(curDate),curDate);}renderDay();refreshLists();
+  }catch(e){RI.msg=`${done} din bhare, phir ruk gaya — dobara Import dabao. (${e&&e.code||"error"})`;}
+  RI.busy=false;riRender();}
+function riRender(){
+  if(!RI)return;let ov=$("#riOv");
+  if(!ov){ov=el("div",{id:"riOv",class:"ri-ov",role:"dialog","aria-modal":"true","aria-label":"Import Data"});document.body.append(ov);document.body.style.overflow="hidden";
+    ov.addEventListener("click",e=>{if(e.target===ov&&!RI.busy)riClose();});}
+  const box=el("div",{class:"ri-box"});ov.replaceChildren(box);
+  box.append(el("div",{class:"ri-head"},el("div",{class:"daytitle",style:"margin:0",text:"Import Data – Meter reading"}),el("button",{class:"btn small",type:"button",disabled:RI.busy||undefined,onclick:riClose},"Close")));
+  const msg=el("p",{class:RI.msg&&/nahi|ruk|chahiye/.test(RI.msg)?"warn":"hint",style:"margin:6px 0",text:RI.msg||""});
+  if(RI.step==="pick"){
+    const fs=el("select",{},el("option",{value:"HSD",text:"HSD"}),el("option",{value:"MS",text:"MS"}));fs.value=RI.fuel;fs.onchange=()=>RI.fuel=fs.value;
+    const mi=el("input",{type:"month",value:RI.month});mi.onchange=()=>{if(mi.value)RI.month=mi.value;};
+    const ph=el("input",{type:"file",accept:"image/*",hidden:true}),xl=el("input",{type:"file",accept:".xlsx,.xls,.csv",hidden:true});
+    ph.onchange=()=>{const f=ph.files[0];ph.value="";if(f)riPhoto(f);};xl.onchange=()=>{const f=xl.files[0];xl.value="";if(f)riExcel(f);};
+    box.append(el("div",{class:"ri-pick"},el("label",{},"Product",fs),el("label",{},"Mahina",mi)),
+      el("div",{class:"ri-src"},
+        el("button",{class:"btn ri-big",type:"button",disabled:RI.busy||undefined,onclick:()=>ph.click()},el("b",{text:"📷 Photo"}),el("span",{text:"DSR register ka page"})),
+        el("button",{class:"btn ri-big",type:"button",disabled:RI.busy||undefined,onclick:()=>xl.click()},el("b",{text:"📊 Excel"}),el("span",{text:".xlsx / .xls / .csv"})),ph,xl),msg,
+      el("p",{class:"hint",text:"Register ki har line us din ki opening reading hai; closing agle din ki line se li jayegi. Pehle jaanch table dikhegi — aapke Import dabane par hi day book mein jayega."}));
+    return;}
+  if(RI.step==="map"){
+    const m=RI.map,W=Math.max(...RI.aoa.map(r=>r.length));const hdr=c=>m.hi<0?"":RI.aoa.slice(0,m.hi+1).map(r=>String(r[c]??"")).join(" ").trim();
+    const sample0=RI.aoa[m.hi+1]||[];const colName=c=>`${String.fromCharCode(65+c)}${hdr(c)?" – "+hdr(c).slice(0,22):""}${sample0[c]!==undefined&&sample0[c]!==""?" ("+String(sample0[c]).slice(0,12)+")":""}`;
+    const sel=(v,set,allowNone=true)=>{const s=el("select",{});if(allowNone)s.append(el("option",{value:"-1",text:"—"}));for(let c=0;c<W;c++)s.append(el("option",{value:String(c),text:colName(c)}));s.value=String(v);s.onchange=()=>set(+s.value);return s;};
+    const nz=fuelN(RI.fuel);const grid=el("div",{class:"ri-map"});
+    grid.append(el("label",{},"Date",sel(m.date,v=>m.date=v,false)),el("label",{},"Testing",sel(m.test,v=>m.test=v)),el("label",{},"Net sale (register)",sel(m.net,v=>m.net=v)));
+    for(let i=0;i<nz;i++)grid.append(el("label",{},`${RI.fuel} ${i+1} reading`,sel(m.reads[i]??-1,v=>{m.reads[i]=v;})));
+    const md=el("select",{},el("option",{value:"open",text:"Opening (register jaisi) – closing agli line se"}),el("option",{value:"close",text:"Closing (day book jaisi)"}));md.value=m.mode;md.onchange=()=>m.mode=md.value;
+    box.append(el("p",{class:"hint",text:"Page ne column apne aap pehchane hain. Galat ho to yahan sahi column chuno."}),grid,el("label",{class:"ri-mode"},"Reading kis tarah ki hai",md),msg,
+      el("div",{class:"ri-foot"},el("button",{class:"btn",type:"button",onclick:()=>{RI.step="pick";RI.msg="";riRender();}},"Peeche"),el("button",{class:"btn primary",type:"button",onclick:()=>{while(m.reads.length&&m.reads[m.reads.length-1]<0)m.reads.pop();riFromExcel();}},"Aage")));
+    return;}
+  // check / done
+  const n=RI.n,F=RI.fuel;const t=el("table",{class:"ri-t"});
+  t.append(el("thead",{},el("tr",{},el("th",{},(()=>{const a=el("input",{type:"checkbox","aria-label":"Sab chuno"});a.checked=RI.rows.every(x=>x.tick);a.onchange=()=>{RI.rows.forEach(x=>x.tick=a.checked);riRender();};return a;})()),el("th",{text:"Date"}),
+    ...Array.from({length:n},(_,i)=>el("th",{class:"num",text:`${F} ${i+1} closing`})),el("th",{class:"num",text:"Testing"}),el("th",{class:"num",text:"Net sale"}),el("th",{class:"num",text:"Register"}),el("th",{text:"Jaanch"}))));
+  const tb=el("tbody");let okN=0;
+  RI.rows.forEach((r,ri)=>{const st=riStat(r);if(st.ok)okN++;
+    const tr=el("tr",{class:st.ok?"":"ri-bad"});
+    const cb=el("input",{type:"checkbox","aria-label":"Import "+r.date});cb.checked=!!r.tick;cb.onchange=()=>{r.tick=cb.checked;riRender();};
+    tr.append(el("td",{},cb),el("td",{style:"white-space:nowrap",text:short(r.date)}));
+    for(let i=0;i<n;i++){const inp=el("input",{class:"f n",inputmode:"numeric",value:r.close[i]??"","aria-label":`${short(r.date)} ${F} ${i+1} closing`});
+      inp.onchange=()=>{r.close[i]=num(inp.value);const nx=RI.rows[ri+1];if(nx&&nx.date===addDays(r.date,1))nx.open[i]=r.close[i];riRender();};tr.append(el("td",{},inp));}
+    const ti=el("input",{class:"f n",inputmode:"decimal",value:r.test??"","aria-label":short(r.date)+" testing",style:"width:64px"});ti.onchange=()=>{r.test=num(ti.value);riRender();};
+    tr.append(el("td",{},ti),el("td",{class:"out",text:st.net==null?"—":ltr(st.net)}),el("td",{class:"out",text:r.net==null?"—":ltr(r.net)}),el("td",{class:st.ok?"diff0":"warn",text:st.ok?"✓":"⚠ "+st.why.join("; ")}));
+    tb.append(tr);});
+  t.append(tb);
+  const nTick=RI.rows.filter(x=>x.tick).length;
+  box.append(el("p",{class:"hint",style:"margin:4px 0 8px",text:`${F} · ${RI.rows.length} din · ${okN} mile (✓) · ${RI.rows.length-okN} mein farak (⚠). Khana badal sakte ho — jaanch turant dobara hogi. Sirf tick wale din day book mein jayenge (sirf closing reading aur testing).`}),
+    el("div",{class:"tscroll"},t),msg,
+    el("div",{class:"ri-foot"},RI.step==="done"?el("button",{class:"btn primary",type:"button",onclick:riClose},"Theek hai"):
+      el("button",{class:"btn",type:"button",disabled:RI.busy||undefined,onclick:()=>{RI.step="pick";RI.msg="";riRender();}},"Peeche"),
+      RI.step==="done"?null:el("button",{class:"btn primary",type:"button",disabled:RI.busy||!nTick||!canWrite||undefined,onclick:riImport},`Import (${nTick} din)`)));
+}
+
+function renderSO(){
+  const body=$("#soBody");const ae=document.activeElement;const keepId=ae&&ae.id&&ae.id.startsWith("so")?ae.id:null;const selS=keepId&&ae.selectionStart!=null?ae.selectionStart:null;body.replaceChildren();
+  try{
+  const top=el("section",{class:"card so-top"});
+  const iD=el("input",{type:"date",id:"soInsp",value:soSet.inspDate,disabled:!canWrite||undefined}),rD=el("input",{type:"date",id:"soRep",value:soSet.repDate||iso(new Date()),disabled:!canWrite||undefined});
+  iD.addEventListener("change",()=>{soSet.inspDate=iD.value;soSave();setTimeout(renderSO,0);});rD.addEventListener("change",()=>{soSet.repDate=rD.value;soSave();setTimeout(renderSO,0);});
+  top.append(el("div",{class:"so-dates"},el("label",{},"Pichhli inspection ki date",iD),el("label",{},"Report ki date",rD),
+    el("div",{class:"titlebtns"},downloads?el("button",{class:"btn small",id:"soPrt",type:"button",onclick:soPdf},"Print"):null,downloads?el("button",{class:"btn small",id:"soXls",type:"button",onclick:soExcel},"Export Excel"):null)));
+  body.append(el("div",{class:"daytitle",text:"Daily Sales Report"}),dsrCard(),el("div",{class:"daytitle",style:"margin-top:18px",text:"Sales Officer Report"}),top);
+  const R=soCalc();
+  if(R)top.append(soCloseBox(R));
+  if(!R){const hc0=soHistCard();if(hc0)body.append(hc0);body.append(el("div",{class:"empty",text:"Upar pichhli SO inspection ki date chuno. Uske baad readings, testing aur tanker stock apne aap bhar jayenge."}));return;}
+  const grid=el("div",{class:"grid2"});
+  for(const[k,label,n]of[["hsd","HSD",HSD_N],["ms","MS",MS_N]]){const X=R[k],S=soSet[k];
+    const nIn=(field,i,auto,lab)=>{const e=el("input",{id:`so-${k}-${field}-${i}`,class:"f n",inputmode:"decimal",value:soSet[k][field][i]??"",placeholder:auto==null?"":ltr(auto),"aria-label":lab,disabled:!canWrite||undefined});
+      e.addEventListener("input",()=>{soSet[k][field][i]=num(e.value);soSave();});e.addEventListener("change",()=>setTimeout(renderSO,0));return e;};
+    const nt=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Nozzle"}),el("th",{class:"num",text:"New reading"}),el("th",{class:"num",text:"Inspection reading (old)"}),el("th",{class:"num",text:"Sale (Ltr)"}))),
+      el("tbody",{},...X.noz.map((z2,i)=>el("tr",{},el("td",{text:`${label} ${i+1}`}),el("td",{},nIn("newr",i,z2.autoN,`${label} ${i+1} new reading`)),el("td",{},nIn("insp",i,z2.autoI,`${label} ${i+1} inspection reading`)),el("td",{class:"out",text:ltr(z2.sale)})))),
+      el("tfoot",{},el("tr",{},el("td",{colspan:3,text:"Total sale"}),el("td",{class:"out",text:ltr(X.sale)}))));
+    const mt=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Mahina"}),el("th",{class:"num",text:"Testing (Ltr)"}),el("th",{class:"num",text:"Receipts (Ltr)"}))),
+      el("tbody",{},...R.months.map(m=>{const mIn=(field,auto,lab)=>{const e=el("input",{id:`so-${k}-${field}-${m}`,class:"f n",inputmode:"decimal",value:soSet[k][field][m]??"",placeholder:ltr(r2(z(auto[m]))),"aria-label":lab,disabled:!canWrite||undefined});
+        e.addEventListener("input",()=>{const ov=soSet[k][field];const v=num(e.value);if(v==null)delete ov[m];else ov[m]=v;soSave();});e.addEventListener("change",()=>setTimeout(renderSO,0));return e;};
+      return el("tr",{},el("td",{text:MONTH_UP(m)}),el("td",{class:"w-amt"},mIn("testOv",X.testAuto,`${label} ${m} testing`)),el("td",{class:"w-amt"},mIn("recOv",X.recAuto,`${label} ${m} receipts`)));})),
+      el("tfoot",{},el("tr",{},el("td",{text:"Total"}),el("td",{class:"out",text:ltr(X.T)}),el("td",{class:"out",text:ltr(X.R)}))));
+    const sIn=(key,lab)=>{const e=el("input",{id:`so-${k}-${key}`,class:"f n",inputmode:"decimal",value:S[key]??"",disabled:!canWrite||undefined,"aria-label":lab});e.addEventListener("input",()=>{soSet[k][key]=num(e.value);soSave();});e.addEventListener("change",()=>setTimeout(renderSO,0));return e;};
+    const pIn=el("input",{id:`so-${k}-pct`,class:"f n",inputmode:"decimal",value:S.pct,style:"width:70px",disabled:!canWrite||undefined,"aria-label":"Permissible loss %"});pIn.addEventListener("input",()=>{soSet[k].pct=num(pIn.value)??0;soSave();});pIn.addEventListener("change",()=>setTimeout(renderSO,0));
+    const ok=X.ok;
+    const st=el("table",{class:"summary"},el("tbody",{},
+      el("tr",{},el("td",{class:"lbl",text:"Prev. Opn. Stock"}),el("td",{class:"w-amt"},sIn("stockInsp","Prev. Opn. Stock"))),
+      el("tr",{},el("td",{class:"lbl",text:"Receipts"}),el("td",{class:"out",text:ltr(X.R)})),
+      el("tr",{class:"total"},el("td",{text:"Total Stock"}),el("td",{class:"out",text:ltr(X.totStock)})),
+      el("tr",{},el("td",{class:"lbl",text:"Today's Stock"}),el("td",{class:"w-amt"},sIn("stockNow","Today's Stock"))),
+      el("tr",{},el("td",{class:"lbl",text:"Dip Sale"}),el("td",{class:"out",text:X.dip==null?"Today's stock daalo":ltr(X.dip)})),
+      el("tr",{},el("td",{class:"lbl",text:`Meter Sale (${ltr(X.sale)} − testing ${ltr(X.T)})`}),el("td",{class:"out",text:ltr(X.meter)})),
+      el("tr",{class:"total"},el("td",{text:"+/- Var (Meter − Dip)"}),el("td",{class:"out"+(X.var!=null&&X.var<0?" warn":""),text:X.var==null?"—":ltr(X.var)})),
+      el("tr",{},el("td",{class:"lbl",text:"% Var"}),el("td",{class:"out",text:X.pvar==null?"—":X.pvar.toFixed(2)})),
+      el("tr",{},el("td",{class:"lbl",text:"4% Stock Var"}),el("td",{class:"out",text:X.s4==null?"—":String(X.s4)})),
+      el("tr",{class:"cih"},el("td",{},"Var in permissible limit (",pIn,"%)"),el("td",{class:"out"+(ok===false?" warn":""),text:ok==null?"—":(ok?"Yes":"No")}))));
+    grid.append(el("section",{class:"card"},el("h2",{},label,el("span",{class:"tag "+k,text:`${short(R.I)} → ${short(R.D)}`})),
+      el("div",{class:"tscroll"},nt),el("h2",{style:"margin-top:14px",text:"Testing & receipts"}),el("div",{class:"tscroll"},mt),el("h2",{style:"margin-top:14px",text:"Variation details"}),st,
+      ok==null?null:el("p",{class:ok?"diff0":"warn",style:"margin:8px 0 0",text:ok?`✓ Variation ${X.pvar.toFixed(2)}% — permissible limit ke andar.`:`Variation ${X.pvar.toFixed(2)}% — permissible limit (${X.pct}%) se zyada.`})));}
+  body.append(grid);
+  body.append(attachCard(soSet.files||[],async arr=>{soSet.files=arr;soSave();renderSO();}));
+  body.append(el("p",{class:"hint",text:"Grey number apne aap aate hain: New reading day book ki aakhri reading se, testing day book se, receipts tanker page se. SO ki asli reading ya figure alag ho to khane mein likh do — wahi lagega; khana khaali karoge to phir se apne aap wala aa jayega. Today's Stock (dip) khud bharna hai. Hisaab HPCL Retail Outlet Inspection Report jaisa: Total Stock = Prev + Receipts, Dip Sale = Total − Today, Meter Sale = Totalizer − Testing, Var = Meter − Dip, % Var = Var ÷ Dip Sale."}));
+  { const hc=soHistCard();if(hc)body.append(hc); }
+  }finally{if(keepId){const e2=document.getElementById(keepId);if(e2){e2.focus();try{if(selS!=null)e2.setSelectionRange(e2.value.length,e2.value.length);}catch(x){}}}}
+}
+
+async function soExcel(ev,R0){
+  const R=R0||soCalc();if(!R||!downloads)return;const b=ev&&ev.currentTarget||$("#soXls");const bt=b.textContent;b.textContent="Ban raha hai…";
+  try{await loadScript(CDN.xlsx);
+    const FMT="#,##0.00",A=[];const put=(r,c,v)=>{(A[r-1]=A[r-1]||[])[c]=v;};
+    const N=v=>v==null?null:{t:"n",v:+v,z:FMT},F=(f,v)=>({t:"n",f,v:+(v||0),z:FMT});
+    const col=i=>String.fromCharCode(65+i);
+    put(1,0,{t:"s",f:"NOW()",v:""});{const[yy,mm,dd]=R.D.split("-").map(Number);put(2,0,{t:"n",v:(Date.UTC(yy,mm-1,dd)-Date.UTC(1899,11,30))/864e5,z:"dd-mm-yyyy"});}put(3,0,"SALES OFFICER REPORT");
+    put(2,2,"Inspection date: "+R.I.split("-").reverse().join("-"));put(2,6,"BIHANI BROTHERS");
+    let s=4;
+    for(const[k,label,n]of[["hsd","HSD",HSD_N],["ms","MS",MS_N]]){const X=R[k];
+      put(s,1,label);put(s,10,"TESTING");put(s,13,"RECEIPTS");
+      put(s+1,0,"NEW READING");put(s+2,0,"INSPECTION READING (OLD)");put(s+3,0,"SALE");
+      X.noz.forEach((z2,i)=>{const c=col(1+i);put(s+1,1+i,N(z2.nw));put(s+2,1+i,N(z2.insp));put(s+3,1+i,F(`IF(OR(${c}${s+1}="",${c}${s+2}=""),0,${c}${s+1}-${c}${s+2})`,z2.sale));});
+      R.months.forEach((m,j)=>{put(s+1+j,10,MONTH_UP(m));put(s+1+j,11,N(r2(X.test[m])));put(s+1+j,13,N(r2(X.rec[m])));});
+      const t=s+1+R.months.length;put(t,10,"TOTAL");put(t,11,F(`SUM(L${s+1}:L${t-1})`,X.T));put(t,13,F(`SUM(N${s+1}:N${t-1})`,X.R));
+      const r0=Math.max(s+5,t+1),last=col(n),lim=z(num(X.pct));
+      put(r0,0,"TOTAL SALE (TOTALIZER)");put(r0,1,F(`SUM(B${s+3}:${last}${s+3})`,X.sale));
+      put(r0+1,0,"VARIATION DETAILS");put(r0+1,1,label);
+      put(r0+2,0,"Prev. Opn. Stock");put(r0+2,1,N(X.si));
+      put(r0+3,0,"Receipts");put(r0+3,1,F(`N${t}`,X.R));
+      put(r0+4,0,"Total Stock");put(r0+4,1,F(`B${r0+2}+B${r0+3}`,X.totStock));
+      put(r0+5,0,"Today's Stock");put(r0+5,1,N(X.now??0));
+      put(r0+6,0,"Dip Sale");put(r0+6,1,F(`B${r0+4}-B${r0+5}`,X.dip??X.totStock));
+      put(r0+7,0,"Meter Sale");put(r0+7,1,F(`B${r0}-L${t}`,X.meter));put(r0+7,2,"(Totalizer sale - Testing)");
+      put(r0+8,0,"+/- Var");put(r0+8,1,F(`B${r0+7}-B${r0+6}`,X.var??0));
+      put(r0+9,0,"% Var");put(r0+9,1,F(`IF(B${r0+6}=0,0,ROUND(B${r0+8}/B${r0+6}*100,2))`,X.pvar??0));
+      put(r0+10,0,"4% Stock Var");put(r0+10,1,F(`ROUND(B${r0+5}*4%,0)`,X.s4??0));
+      put(r0+11,0,"Var in permissible limit");put(r0+11,1,{t:"s",f:`IF(ABS(B${r0+9})<=${lim},"Yes","No")`,v:X.ok==null?"":(X.ok?"Yes":"No")});put(r0+11,2,`(limit ${lim}% of dip sale)`);
+      s=r0+15;}
+    for(let i=0;i<A.length;i++)A[i]=A[i]||[];
+    const ws=XLSX.utils.aoa_to_sheet(A);ws["!cols"]=[{wch:20},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:4},{wch:4},{wch:4},{wch:10},{wch:12},{wch:3},{wch:12}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Sheet1");
+    await downloads.save({filename:`Sales_Officer_Report_${R.D.split("-").reverse().join("-")}.xlsx`,data:new Uint8Array(XLSX.write(wb,{type:"array",bookType:"xlsx"}))});
+  }catch(e){if(!(e&&e.code==="declined"))$("#soText").textContent="Export nahi hua: "+(e&&e.message||e);}
+  finally{b.textContent=bt;}}
+
+async function soPdf(ev,R0){
+  const R=R0||soCalc();if(!R||!downloads)return;const b=ev&&ev.currentTarget||$("#soPrt");const bt=b.textContent;b.textContent="Ban raha hai…";
+  try{await loadScript(CDN.jspdf);await loadScript(CDN.autotable);
+    const P=new window.jspdf.jsPDF({unit:"mm",format:"a4"});const W=P.internal.pageSize.getWidth(),M=12,half=(W-2*M-6)/2;
+    const n2=v=>v==null?"":(+v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}),RT={halign:"right"};
+    P.setFont("helvetica","bold");P.setFontSize(15);P.text("SALES OFFICER REPORT",M,15);
+    P.setFont("helvetica","normal");P.setFontSize(9);P.text("Bihani Brothers  |  Prakash Chand  |  Mobile 9460301561",M,20.5);
+    P.setFont("helvetica","bold");P.setFontSize(10);P.text(`Inspection: ${R.I.split("-").reverse().join("-")}   Report: ${R.D.split("-").reverse().join("-")}`,W-M,15,{align:"right"});
+    P.setDrawColor(224,38,45);P.setLineWidth(.6);P.line(M,23.5,W-M,23.5);
+    let y=27;const ends=[];
+    const tbl=(title,head,body,foot,left,width,cols)=>{P.autoTable({startY:y,head:[[{content:title,colSpan:head.length,styles:{halign:"left",fillColor:[30,63,138],textColor:255}}],head],body,foot:foot?[foot]:undefined,theme:"grid",
+      styles:{fontSize:8,cellPadding:1,lineColor:[213,220,234],lineWidth:.15},headStyles:{fillColor:[234,240,251],textColor:[30,63,138],fontStyle:"bold"},footStyles:{fillColor:[246,248,252],textColor:[20,32,64],fontStyle:"bold"},showFoot:"lastPage",
+      margin:{left,right:W-left-width},tableWidth:width,columnStyles:cols||{},didParseCell:h=>{if(h.section==="foot")h.cell.styles.halign=h.column.index>0?"right":"left";}});return P.lastAutoTable.finalY;};
+    const y0=y;
+    [["hsd","HSD",M],["ms","MS",M+half+6]].forEach(([k,label,left])=>{const X=R[k];y=y0;
+      y=tbl(`${label} - READINGS`,["Nozzle","New","Inspection (old)","Sale (Ltr)"],X.noz.map((z2,i)=>[`${label} ${i+1}`,n2(z2.nw),n2(z2.insp),n2(z2.sale)]),["Total sale","","",n2(X.sale)],left,half,{1:RT,2:RT,3:RT})+3;
+      y=tbl(`${label} - TESTING & RECEIPTS`,["Month","Testing","Receipts"],R.months.map(m=>[MONTH_UP(m),n2(X.test[m]),n2(X.rec[m])]),["Total",n2(X.T),n2(X.R)],left,half,{1:RT,2:RT})+3;
+      y=tbl(`${label} - VARIATION DETAILS`,["Particulars","Ltr"],[["Prev. Opn. Stock",n2(X.si)],["Receipts",n2(X.R)],["Total Stock",n2(X.totStock)],["Today's Stock",n2(X.now)],["Dip Sale",n2(X.dip)],["Meter Sale (totalizer - testing)",n2(X.meter)],["+/- Var",n2(X.var)],["% Var",X.pvar==null?"":X.pvar.toFixed(2)],["4% Stock Var",X.s4==null?"":String(X.s4)]],
+        [`Var in permissible limit (${X.pct}%)`,X.ok==null?"":(X.ok?"Yes":"No")],left,half,{1:RT});ends.push(y);});
+    y=Math.max(...ends)+14;P.setFont("helvetica","normal");P.setFontSize(9);P.setTextColor(90,102,128);
+    P.text("Dealer signature: ____________________",M,y);P.text("Sales Officer signature: ____________________",W-M,y,{align:"right"});
+    await downloads.save({filename:`Sales_Officer_Report_${R.D.split("-").reverse().join("-")}.pdf`,data:P.output("arraybuffer")});
+  }catch(e){if(!(e&&e.code==="declined"))$("#soText").textContent="PDF nahi bana: "+(e&&e.message||e);}
+  finally{b.textContent=bt;}}
+
+// ---------- close SO report: today's readings become next report's old readings ----------
+const soHist=new Map();
+function soCloseBox(R){
+  const box=el("div",{class:"so-close"});
+  if(!canWrite||!R)return box;
+  const missing=[];for(const[k,l]of[["hsd","HSD"],["ms","MS"]])R[k].noz.forEach((z2,i)=>{if(z2.nw==null)missing.push(`${l} ${i+1}`);});
+  const go=el("button",{class:"btn small primary",type:"button",onclick:()=>{
+    box.replaceChildren(el("span",{class:"hint",style:"margin:0",text:`${R.D.split("-").reverse().join("-")} ki New reading aur current stock agli report ki Old reading / Stock on inspection ban jayenge. Ye report sambhal kar rakhi jayegi.`+(missing.length?` (${missing.length} nozzle ki New reading khaali hai — unki Old reading bhi khaali rahegi.)`:"")}),
+      el("button",{class:"btn small primary",type:"button",onclick:()=>soClose(R)},"Yes, close it"),el("button",{class:"btn small",type:"button",onclick:()=>renderSO()},"No"));}},"Close Report & Start New");
+  box.append(go,el("span",{class:"hint",style:"margin:0",text:"SO ke jaane ke baad dabao."}));
+  return box;}
+async function soClose(R){
+  const snap=JSON.parse(JSON.stringify(soSet));
+  const res={};for(const k of["hsd","ms"]){const X=R[k];res[k]={totalizer:X.sale,T:X.T,R:X.R,si:X.si,now:X.now,totStock:X.totStock,dip:X.dip,meter:X.meter,var:X.var,pvar:X.pvar,s4:X.s4,ok:X.ok,limit:X.pct};}
+  const id=R.D+"-"+Date.now().toString(36);
+  const next=soNorm({inspDate:R.D,repDate:""});
+  for(const k of["hsd","ms"]){next[k].pct=soSet[k].pct;next[k].insp=R[k].noz.map(z2=>z2.nw??null);next[k].stockInsp=R[k].now??null;}
+  try{
+    if(db){await db.doc("soReports/"+id).set({id,from:R.I,to:R.D,set:snap,files:snap.files||[],result:res,by:myId||null,at:new Date().toISOString()});}
+    soHist.set(id,{id,from:R.I,to:R.D,set:snap,files:snap.files||[],result:res});
+    soSet=next;clearTimeout(soSaveT);
+    if(db)await db.doc("settings/so").set(JSON.parse(JSON.stringify(Object.assign({},soSet,{by:myId||null,at:new Date().toISOString()}))));
+    $("#soText").textContent="Report close ho gayi. Nayi report shuru.";renderSO();
+  }catch(e){$("#soText").textContent="Close nahi hua — dobara try karo.";}}
+function soHistCard(){
+  if(!soHist.size)return null;
+  const rows=[...soHist.values()].sort((a,b)=>a.to<b.to?1:-1);
+  const f=v=>v==null?"—":ltr(v);
+  const t=el("table",{class:"month"},el("thead",{},el("tr",{},...["Inspection → Report","HSD meter sale","HSD var","HSD % var","HSD limit","MS meter sale","MS var","MS % var","MS limit"].map((h,i)=>el("th",{class:i?"num":"",text:h})))),
+    el("tbody",{},...rows.map(r=>{const c=k=>{const x=r.result[k]||{};return[el("td",{class:"out",text:f(x.meter??x.sale)}),el("td",{class:"out",text:f(x.var)}),el("td",{class:"out",text:x.pvar==null?"—":x.pvar.toFixed(2)}),el("td",{class:"out"+(x.ok===false?" warn":""),text:x.ok==null?"—":(x.ok?"Yes":"No")})];};
+      const open=()=>{soHView=soHView===r.id?null:r.id;renderSO();setTimeout(()=>{const v=document.getElementById("soHDetail");if(v)v.scrollIntoView({behavior:"smooth",block:"start"});},50);};
+      return el("tr",{class:soHView===r.id?"cur":"",tabindex:0,title:"Poori report dekho",onclick:open,onkeydown:ev=>{if(ev.key==="Enter")open();}},el("td",{text:`${short(r.from)} → ${short(r.to)} ${r.to.slice(0,4)}`}),...c("hsd"),...c("ms"));})));
+  const sec=el("section",{class:"card"},el("h2",{text:"Old SO Reports"}),el("div",{class:"tscroll"},t),el("p",{class:"hint",text:"Kisi report par click karo to poori report neeche khulegi."}));
+  const h=soHView&&soHist.get(soHView);if(h&&h.set)sec.append(soHistDetail(h));
+  return sec;}
+let soHView=null;
+function soHistDetail(h){
+  const R=soCalc(soNorm(h.set));const box=el("div",{id:"soHDetail",style:"margin-top:14px;padding-top:12px;border-top:2px solid var(--line,#d5dcea)"});
+  if(!R){box.append(el("p",{class:"hint",text:"Is report ka data nahi mila."}));return box;}
+  box.append(el("div",{class:"so-dates"},el("div",{class:"daytitle",style:"margin:0",text:`SO Report: ${R.I.split("-").reverse().join("-")} → ${R.D.split("-").reverse().join("-")}`}),
+    el("div",{class:"titlebtns"},downloads?el("button",{class:"btn small",type:"button",onclick:ev=>soPdf(ev,R)},"Print"):null,downloads?el("button",{class:"btn small",type:"button",onclick:ev=>soExcel(ev,R)},"Export Excel"):null,el("button",{class:"btn small",type:"button",onclick:()=>{soHView=null;renderSO();}},"Close"))));
+  const f=v=>v==null?"—":ltr(v);const grid=el("div",{class:"grid2",style:"margin-top:10px"});
+  for(const[k,label]of[["hsd","HSD"],["ms","MS"]]){const X=R[k];
+    const nt=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Nozzle"}),el("th",{class:"num",text:"New reading"}),el("th",{class:"num",text:"Inspection reading (old)"}),el("th",{class:"num",text:"Sale (Ltr)"}))),
+      el("tbody",{},...X.noz.map((z2,i)=>el("tr",{},el("td",{text:`${label} ${i+1}`}),el("td",{class:"out",text:f(z2.nw)}),el("td",{class:"out",text:f(z2.insp)}),el("td",{class:"out",text:ltr(z2.sale)})))),
+      el("tfoot",{},el("tr",{},el("td",{colspan:3,text:"Total sale"}),el("td",{class:"out",text:ltr(X.sale)}))));
+    const mt=el("table",{},el("thead",{},el("tr",{},el("th",{text:"Mahina"}),el("th",{class:"num",text:"Testing (Ltr)"}),el("th",{class:"num",text:"Receipts (Ltr)"}))),
+      el("tbody",{},...R.months.map(m=>el("tr",{},el("td",{text:MONTH_UP(m)}),el("td",{class:"out",text:ltr(r2(X.test[m]))}),el("td",{class:"out",text:ltr(r2(X.rec[m]))})))),
+      el("tfoot",{},el("tr",{},el("td",{text:"Total"}),el("td",{class:"out",text:ltr(X.T)}),el("td",{class:"out",text:ltr(X.R)}))));
+    const row=(l,v,c)=>el("tr",{class:c||""},el("td",{class:c?"":"lbl",text:l}),el("td",{class:"out"+(c==="cih"&&X.ok===false?" warn":""),text:v}));
+    const st=el("table",{class:"summary"},el("tbody",{},row("Prev. Opn. Stock",f(X.si)),row("Receipts",f(X.R)),row("Total Stock",f(X.totStock),"total"),row("Today's Stock",f(X.now)),row("Dip Sale",f(X.dip)),
+      row(`Meter Sale (${ltr(X.sale)} − testing ${ltr(X.T)})`,f(X.meter)),row("+/- Var (Meter − Dip)",f(X.var),"total"),row("% Var",X.pvar==null?"—":X.pvar.toFixed(2)),row("4% Stock Var",X.s4==null?"—":String(X.s4)),
+      row(`Var in permissible limit (${X.pct}%)`,X.ok==null?"—":(X.ok?"Yes":"No"),"cih")));
+    grid.append(el("section",{class:"card"},el("h2",{},label,el("span",{class:"tag "+k,text:`${short(R.I)} → ${short(R.D)}`})),el("div",{class:"tscroll"},nt),el("h2",{style:"margin-top:14px",text:"Testing & receipts"}),el("div",{class:"tscroll"},mt),el("h2",{style:"margin-top:14px",text:"Variation details"}),st));}
+  box.append(grid);
+  box.append(attachCard(h.files||[],async arr=>{if(db)await db.doc("soReports/"+h.id).update({files:arr});h.files=arr;renderSO();}));
+  return box;}
+
+// ---------- tabs & nav ----------
+function showTab(t){
+  const views={day:"#dayView",month:"#monthView",bank:"#bankView",tank:"#tankView",so:"#soView"};
+  $(views[t]).querySelector(".bar .nav").after($("#tabs"));
+  for(const k in views)$(views[k]).hidden=k!==t;
+  $("#tabDay").setAttribute("aria-selected",t==="day");$("#tabMonth").setAttribute("aria-selected",t==="month");$("#tabSO").setAttribute("aria-selected",t==="so");
+  if(t!=="day")flush();
+  if(t==="month"){curMonth=curDate.slice(0,7);renderMonth();}
+  if(t==="bank"){if(!bMonth)bMonth=curDate.slice(0,7);renderBank();}
+  if(t==="tank"){if(!tMonth)tMonth=curDate.slice(0,7);renderTank();}
+  if(t==="so")renderSO();
+  LS.set("bb.lastTab",t);}
+$("#tabDay").onclick=()=>showTab("day");$("#tabMonth").onclick=()=>showTab("month");$("#tabSO").onclick=()=>showTab("so");
+$("#prevDay").onclick=()=>loadDay(addDays(curDate,-1));$("#nextDay").onclick=()=>loadDay(addDays(curDate,1));
+$("#todayBtn").onclick=()=>loadDay(iso(new Date()));
+$("#datePick").onchange=e=>{if(e.target.value)loadDay(e.target.value);};
+const shiftMonth=n=>{const d=parseISO(curMonth+"-01");d.setMonth(d.getMonth()+n);curMonth=iso(d).slice(0,7);renderMonth();};
+$("#prevMonth").onclick=()=>shiftMonth(-1);$("#nextMonth").onclick=()=>shiftMonth(1);
+$("#monthPick").onchange=e=>{if(e.target.value){curMonth=e.target.value;renderMonth();}};
+$("#exportCsv").onclick=exportCsv;
+const shiftBMonth=n=>{const d=parseISO(bMonth+"-01");d.setMonth(d.getMonth()+n);bMonth=iso(d).slice(0,7);renderBank();};
+$("#prevBMonth").onclick=()=>shiftBMonth(-1);$("#nextBMonth").onclick=()=>shiftBMonth(1);
+$("#bMonthPick").onchange=e=>{if(e.target.value){bMonth=e.target.value;renderBank();}};
+$("#loadRemote").onclick=()=>{if(pendingRemote){cur=normalize(pendingRemote,curDate);dirty=false;clearTimeout(saveTimer);pendingRemote=null;$("#remoteBanner").hidden=true;renderDay();idleStatus();}};
+window.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flush();});
+
+// ---------- start ----------
+cur=normalize(null,curDate);$("#datePick").value=curDate;
+$("#dayBody").replaceChildren(el("div",{class:"empty",text:"Loading the day book…"}));
+let first=true;
+(async()=>{
+  const c=window.claude;
+  if(!c||!c.use){connected=false;renderDay();idleStatus();return;}
+  [db,user,downloads]=await Promise.all([c.use("db"),c.use("user"),c.use("downloads")]);
+  if(!downloads)downloads=FALLBACK_DL;
+  c.use("assets").then(a=>{assetsCap=a;soRefresh();}).catch(()=>{});
+  if(user){try{myId=await user.id();const w=await user.can("data.write");if(w===false)canWrite=false;}catch(e){}}
+  if(!db){connected=false;renderDay();idleStatus();return;}
+  connected=true;
+  db.collection("days").limit(1000).onSnapshot(snap=>{
+    let curChanged=null;
+    for(const ch of snap.docChanges()){const id=ch.doc.id;
+      if(ch.type==="removed"){days.delete(id);if(id===curDate)curChanged={removed:true};}
+      else{const data=ch.doc.data();days.set(id,data);if(id===curDate&&!first)curChanged=data;}}
+    refreshLists();
+    if(first){first=false;{const lt=LS.get("bb.lastTab");if(lt==="month"||lt==="bank"||lt==="tank"||lt==="so")showTab(lt);}cur=normalize(days.get(curDate),curDate);renderDay();idleStatus();}
+    else if(curChanged){
+      if(curChanged.removed){if(!dirty){cur=normalize(null,curDate);renderDay();}}
+      else if(contentKey(curChanged)!==lastSaved&&contentKey(curChanged)!==contentKey(cur)){
+        if(dirty||document.activeElement&&document.activeElement.matches&&document.activeElement.matches("input.f")){pendingRemote=curChanged;$("#remoteBanner").hidden=false;}
+        else{cur=normalize(curChanged,curDate);renderDay();}}
+      idleStatus();renderWho();}
+    else if(!dirty){recalc();idleStatus();}
+    if(!$("#monthView").hidden)renderMonth();
+    bankRefresh();
+  },err=>{connected=false;status("err","Connection lost — reload the page. ("+(err&&err.code||"")+")");});
+  db.collection("bank").limit(1000).onSnapshot(snap=>{for(const ch of snap.docChanges()){if(ch.type==="removed")bankMap.delete(ch.doc.id);else bankMap.set(ch.doc.id,JSON.parse(JSON.stringify(ch.doc.data())));}refreshLists();bankRefresh();},()=>{});
+  db.collection("tanker").limit(1000).onSnapshot(snap=>{for(const ch of snap.docChanges()){if(ch.type==="removed")tankMap.delete(ch.doc.id);else tankMap.set(ch.doc.id,JSON.parse(JSON.stringify(ch.doc.data())));}tankRefresh();soRefresh();},()=>{});
+  db.collection("soReports").limit(500).onSnapshot(snap=>{for(const ch of snap.docChanges()){if(ch.type==="removed")soHist.delete(ch.doc.id);else{const d=ch.doc.data();soHist.set(ch.doc.id,{id:ch.doc.id,from:d.from,to:d.to,set:d.set?JSON.parse(JSON.stringify(d.set)):null,files:JSON.parse(JSON.stringify(Array.isArray(d.files)?d.files:(d.set&&d.set.files)||[])),result:JSON.parse(JSON.stringify(d.result||{hsd:{},ms:{}}))});}}soRefresh();},()=>{});
+  db.doc("settings/so").onSnapshot(sn=>{if(!sn.exists)return;const d=JSON.parse(JSON.stringify(sn.data()));if(soPending||soKey(d)===soLastW||soKey(d)===soKey(soSet))return;soSet=soNorm(d);soRefresh();},()=>{});
+  db.doc("settings/dsr").onSnapshot(sn=>{if(!sn.exists)return;const d=JSON.parse(JSON.stringify(sn.data()));if(dsrPend||dsrKey(d)===dsrLastW||dsrKey(d)===dsrKey(dsrSet))return;dsrSet={base:d.base||"",hsd:{dip:d.hsd?d.hsd.dip??null:null},ms:{dip:d.ms?d.ms.dip??null:null}};soRefresh();},()=>{});
+  db.doc("settings/bank").onSnapshot(sn=>{if(sn.exists){const o=JSON.parse(JSON.stringify(sn.data()));delete o.by;delete o.at;bankSet=Object.assign({CA:{},OD:{},stmt:{}},o);bankSet.stmt=Object.assign({CA:{},OD:{}},bankSet.stmt||{});}bankRefresh();},()=>{});
+})();
+})();
+</script>
+
+</body></html>
